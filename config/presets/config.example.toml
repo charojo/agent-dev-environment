@@ -1,0 +1,25 @@
+[project]
+name = "your-project-name"
+# description = "Your project description"
+
+[validate.tiers.fast]
+description = "Fast validation (linting + unit tests)"
+commands = [
+    "uv run ruff check .",
+    "uv run pytest -m 'not slow'"
+]
+
+[validate.tiers.full]
+description = "Full validation (all backend tests + frontend)"
+commands = [
+    "uv run ruff check .",
+    "uv run pytest",
+    "npm run test --prefix src/web"
+]
+
+[validate.tiers.exhaustive]
+description = "Exhaustive validation (includes slow/integration tests)"
+inherits = "full"
+commands = [
+    "uv run pytest --run-slow"
+]

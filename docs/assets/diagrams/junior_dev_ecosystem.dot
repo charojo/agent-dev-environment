@@ -1,0 +1,58 @@
+digraph G {
+    rankdir=LR;
+    node [shape=rectangle, style=filled, fillcolor=lightblue];
+    compound=true;
+
+    subgraph cluster_technical {
+        label = "Technical Guidance";
+        SD [label="Senior Developer\n/ Staff Engineer"];
+        TL [label="Tech Lead\n/ Lead Engineer"];
+    }
+
+    subgraph cluster_delivery {
+        label = "Delivery & Process";
+        EM [label="Engineering Manager"];
+        PM [label="Product Manager"];
+        SM [label="Scrum Master\n/ Agile Coach"];
+    }
+
+    subgraph cluster_quality {
+        label = "Quality & Risk";
+        QA [label="QA / Test Engineer"];
+        SE [label="Security Engineer"];
+    }
+
+    subgraph cluster_platform {
+        label = "Platform & Operations";
+        DE [label="DevOps\n/ Platform Engineer"];
+        SRE [label="SRE / Operations"];
+    }
+
+    subgraph cluster_enablement {
+        label = "Enablement & Experience";
+        UX [label="UX / Designer"];
+        DX [label="Documentation\n/ DX"];
+    }
+
+    subgraph cluster_informal {
+        label = "Informal Support";
+        PD [label="Peer Developers"];
+        GE [label="Go-To Engineer"];
+    }
+
+    JD [label="Junior Developer", fillcolor=gold];
+
+    SD -> JD [label="Mentorship\nCode Reviews\nTechnical Guidance"];
+    TL -> JD [label="Task Scoping\nArchitecture Guardrails"];
+    EM -> JD [label="Growth\nFeedback\nPsychological Safety"];
+    PM -> JD [label="Requirements\nBusiness Context"];
+    SM -> JD [label="Process Support\nBlocker Removal"];
+    QA -> JD [label="Defect Feedback\nQuality Mindset"];
+    SE -> JD [label="Secure Coding\nRisk Awareness"];
+    DE -> JD [label="CI/CD\nEnvironments\nDeployments"];
+    SRE -> JD [label="Incidents\nReliability Lessons"];
+    UX -> JD [label="Design Intent\nUsability Guidance"];
+    DX -> JD [label="Onboarding\nStandards\nExamples"];
+    PD -> JD [label="Peer Support\nShared Learning"];
+    GE -> JD [label="Tribal Knowledge\nOwnership Clarity"];
+}
