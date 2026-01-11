@@ -4,7 +4,7 @@
 
 ## Essential Documentation
 - [Main Readme](README.md)
-- [How to Develop](docs/HOWTO_Develop.md)
+- [How to Use](docs/HOWTO_UseAgentDev.md)
 - [Gemini Context](docs/GEMINI.md)
 
 ## Navigation

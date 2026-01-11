@@ -150,3 +150,9 @@ logs/
 .testmondata
 .vitest-loc-map.json
 node_modules/
+
+# Generated Documentation
+docs/gen/
+*.dot
+!docs/assets/diagrams/*.dot
+

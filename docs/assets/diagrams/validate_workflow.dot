@@ -1,0 +1,45 @@
+digraph ValidateWorkflow {
+    node [shape=box, fontname="Helvetica", style=filled, fillcolor="#F5F5F5"];
+    edge [fontname="Helvetica", fontsize=10];
+
+    Start [shape=ellipse, label="Start\n(validate.sh)", fillcolor="#E1F5FE"];
+    CheckConfig [label="Check Configuration\n(.agent_setup_complete)"];
+    RunWizard [label="Run Configuration Wizard\n(configure.py --interactive)", fillcolor="#FFF9C4"];
+    EnsureEnv [label="Ensure Environment\n(ensure_env.sh)", fillcolor="#C8E6C9"];
+    
+    TierCheck [shape=diamond, label="Tier?"];
+    FastTier [label="Fast Tier\n(LOC-only via testmon)"];
+    MediumTier [label="Medium Tier\n(File-level, Auto-fix)"];
+    FullTier [label="Full Tier\n(Complete Tests, E2E, Coverage)"];
+    ExhaustiveTier [label="Exhaustive Tier\n(Parallel, Mutation)"];
+
+    AutoFix [label="Auto-Fix Phase\n(Ruff, Lint)", fillcolor="#E1F5FE"];
+    BackendTests [label="Backend Tests\n(pytest)"];
+    FrontendTests [label="Frontend Tests\n(Vitest)"];
+    E2ETests [label="E2E Tests\n(Playwright/Selenium)"];
+    
+    Report [label="Generate Report\n(analyze.sh)", fillcolor="#C8E6C9"];
+    End [shape=ellipse, label="End", fillcolor="#E1F5FE"];
+
+    Start -> CheckConfig;
+    CheckConfig -> RunWizard [label="Missing"];
+    CheckConfig -> EnsureEnv [label="Exists"];
+    RunWizard -> EnsureEnv;
+    EnsureEnv -> TierCheck;
+
+    TierCheck -> FastTier [label="--fast"];
+    TierCheck -> MediumTier [label="--medium"];
+    TierCheck -> FullTier [label="--full"];
+    TierCheck -> ExhaustiveTier [label="--exhaustive"];
+
+    FastTier -> BackendTests;
+    MediumTier -> AutoFix;
+    FullTier -> AutoFix;
+    ExhaustiveTier -> AutoFix;
+
+    AutoFix -> BackendTests;
+    BackendTests -> FrontendTests;
+    FrontendTests -> E2ETests;
+    E2ETests -> Report;
+    Report -> End;
+}

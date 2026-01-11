@@ -2,8 +2,8 @@
 import re
 from pathlib import Path
 
-WORKFLOWS_DIR = Path(".agent/workflows")
-DOCS_FILE = Path("docs/HOWTO_Agent_Workflows.md")
+WORKFLOWS_DIR = Path("workflows")
+DOCS_FILE = Path("docs/HOWTO_UseAgentDev.md")
 
 
 def get_workflows():
@@ -11,7 +11,7 @@ def get_workflows():
     if not WORKFLOWS_DIR.exists():
         return workflows
 
-    for workflow_file in WORKFLOWS_DIR.glob("*.md"):
+    for workflow_file in WORKFLOWS_DIR.rglob("*.md"):
         cmd_name = f"/{workflow_file.stem}"
         description = "No description provided."
 
@@ -55,7 +55,9 @@ def update_docs():
     new_section += f"{end_marker}"
 
     # Replace the section
-    pattern = re.compile(f"{re.escape(start_marker)}.*{re.escape(end_marker)}", re.DOTALL)
+    pattern = re.compile(
+        f"{re.escape(start_marker)}.*{re.escape(end_marker)}", re.DOTALL
+    )
     new_content = pattern.sub(new_section, content)
 
     DOCS_FILE.write_text(new_content)

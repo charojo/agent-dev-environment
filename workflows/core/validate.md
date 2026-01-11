@@ -16,7 +16,7 @@ model: gemini-1.5-pro, gemini-2.0-flash
 // turbo
 ./agent_env/bin/validate.sh --full
 
-- **Exhaustive** (Parallel execution, Max coverage, ~75s) - *Recommended for Pre-Merge*:
+- **Exhaustive** (Parallel execution, Max coverage, ~5m) - *Recommended for Pre-Merge*:
 // turbo
 ./agent_env/bin/validate.sh --exhaustive
 

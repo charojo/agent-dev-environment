@@ -1,0 +1,17 @@
+digraph G {
+    rankdir=LR;
+    node [shape=box, style=filled, fillcolor=lightblue];
+
+    User [label="User / AI Agent", shape=ellipse, fillcolor=yellow];
+    Validate [label="bin/validate.sh\n(Unified Interface)"];
+    Ensure [label="bin/ensure_env.sh\n(Env Setup)"];
+    Analyze [label="bin/analyze.sh\n(Log Parsing)"];
+    ProjectInfo [label="bin/analyze_project.py\n(Code Metrics)"];
+    Runners [label="Test Runners\n(pytest, ruff, etc.)", fillcolor=lightgreen];
+
+    User -> Validate;
+    Validate -> Ensure;
+    Validate -> Runners;
+    Validate -> Analyze;
+    Analyze -> ProjectInfo;
+}

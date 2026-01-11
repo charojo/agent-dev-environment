@@ -1,13 +1,10 @@
-[project]
-name = "agent-standard-python"
-description = "Standard Python configuration for Agent Platform projects"
-
+# Standard Python configuration for Agent Platform projects
 # Rules are defined to be "Good enough for 90% of projects"
-[tool.ruff]
+
 line-length = 100
 target-version = "py310"
 
-[tool.ruff.lint]
+[lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -19,7 +16,7 @@ select = [
 ]
 ignore = []
 
-[tool.ruff.format]
+[format]
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false

@@ -1,0 +1,38 @@
+digraph ProjectLayout {
+  rankdir=LR;
+  node [shape=folder, style=filled, fillcolor="#E3F2FD", fontname="Helvetica"];
+  edge [color="#666666"];
+  bgcolor="transparent";
+  
+  root [label="Project Root", shape=box, fillcolor="#FFF3E0"];
+  
+  subgraph cluster_agent {
+      label="Agent Environment";
+      style=dashed;
+      color="#90A4AE";
+      fontcolor="#546E7A";
+      
+      agent_root [label="agent_env/"];
+      
+      bin [label="bin/"];
+      docs [label="docs/"];
+      gen [label="gen/", fillcolor="#FFEBEE", tooltip="Auto-generated documentation"];
+      
+      config [label="config.toml", shape=note, fillcolor="#FFF8E1"];
+      howto [label="HOWTO_Use.md", shape=note, fillcolor="#FFFFFF"];
+      
+      agent_root -> bin;
+      agent_root -> docs;
+      agent_root -> config;
+      
+      docs -> howto;
+      docs -> gen;
+  }
+  
+  root -> agent_root;
+  
+  // Annotations
+  bin -> "validate.sh" [style=dotted, label="executes"];
+  gen -> "DESIGN_SPEC.md" [style=dotted];
+  gen -> "structure.svg" [style=dotted];
+}

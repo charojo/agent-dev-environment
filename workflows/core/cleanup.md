@@ -8,8 +8,7 @@ find . -type d -name ".pytest_cache" -exec rm -rf {} +
 
 2. Remove Node caches and artifacts
 // turbo
-rm -rf src/web/coverage
-rm -rf src/web/dist
+if [ -d "src/web" ]; then rm -rf src/web/coverage src/web/dist; fi
 # Optional: rm -rf src/web/node_modules/.vite
 
 3. Remove Logs

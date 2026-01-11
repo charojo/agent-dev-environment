@@ -16,7 +16,8 @@ This workflow ensures that all project documentation (files in `docs/`) uses rel
 1.  **Check for Absolute Paths**:
     Before committing or finalizing any design document, run the path enforcement script:
     ```bash
-    python agent_env/bin/enforce_relative_paths.py
+    uv run python bin/enforce_relative_paths.py
+    # OR if in submodule: uv run python agent_env/bin/enforce_relative_paths.py
     ```
 
 2.  **Fixing Violations**:
@@ -31,15 +32,16 @@ This workflow ensures that all project documentation (files in `docs/`) uses rel
     - Always verify the link by clicking it in your editor or checking the rendered markdown.
 
 4.  **Diagrams and Assets**:
-    - **Visual Standard**: All diagrams MUST use the **Graphviz DOT** standard for source files (`.dot`) and **PNG** for rendering.
+    - **Visual Standard**: All diagrams MUST use the **Graphviz DOT** standard for source files (`.dot`) and **SVG** for rendering.
     - **Mermaid Warning**: Mermaid code blocks (`` `mermaid ``) DO NOT render in the repository environment and should be avoided in permanent documentation.
     - **Registry**: Place `.dot` source files in `docs/assets/diagrams/`.
     - **Generation**: After modifying any `.dot` file, you MUST generate/update the corresponding PNG:
       ```bash
-      python agent_env/bin/generate_diagrams.py
+      uv run python bin/generate_diagrams.py
+      # OR if in submodule: uv run python agent_env/bin/generate_diagrams.py
       ```
-    - **Linking**: Embed diagrams using relative PNG paths and provide a link to the DOT source:
+    - **Linking**: Embed diagrams using relative SVG paths and provide a link to the DOT source:
       ```markdown
-      ![Diagram Name](../assets/diagrams/name.png)
+      ![Diagram Name](../assets/diagrams/name.svg)
       *[Source: name.dot](../assets/diagrams/name.dot)*
       ```

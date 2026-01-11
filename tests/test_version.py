@@ -1,6 +1,7 @@
 import tomli
 from pathlib import Path
 
+
 def test_version_matches():
     # Find pyproject.toml relative to this test
     path = Path(__file__).parent.parent / "pyproject.toml"

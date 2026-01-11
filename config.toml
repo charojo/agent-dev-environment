@@ -1,24 +1,16 @@
 [project]
-name = "papeterie-engine"
+name = "agent-dev-environment"
 
-[validate.tiers.fast]
-description = "Fast validation (linting + unit tests)"
-commands = [
-    "uv run ruff check .",
-    "uv run pytest -m 'not slow'"
-]
+[languages.python]
+enabled = true
+description = "Python support (required for core scripts and backend)"
+extensions = [".py"]
 
-[validate.tiers.full]
-description = "Full validation (all backend tests + frontend)"
-commands = [
-    "uv run ruff check .",
-    "uv run pytest",
-    "npm run test --prefix src/web"
-]
+[languages.typescript]
+enabled = true
+description = "TypeScript/JavaScript support (TypeScript and TypeDoc recommended)"
+extensions = [".ts", ".tsx", ".js", ".jsx"]
 
-[validate.tiers.exhaustive]
-description = "Exhaustive validation (includes slow/integration tests)"
-inherits = "full"
-commands = [
-    "uv run pytest --run-slow"
-]
+[features.documentation]
+enabled = true
+description = "Advanced documentation (Doxygen, Graphviz diagrams, PDF generation)"

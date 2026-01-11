@@ -1,10 +1,10 @@
 #!/bin/bash
-# Coverage analysis script for Papeterie Engine
+# Coverage analysis script
 # Parses validate.log to extract and display coverage metrics
 
 set -e
 
-LOG_FILE="${1:-logs/validate.log}"
+LOG_FILE="${1:-logs/validation_summary_log.md}"
 BASELINE_LOG="${2:-}"
 
 if [[ ! -f "$LOG_FILE" ]]; then
@@ -14,7 +14,7 @@ if [[ ! -f "$LOG_FILE" ]]; then
 fi
 
 # Extract Tier
-TIER=$(grep "Papeterie Validation - Tier:" "$LOG_FILE" | cut -d':' -f2 | tr -d ' ')
+TIER=$(grep "Validation Suite - Tier:" "$LOG_FILE" | cut -d':' -f2 | tr -d ' ')
 : ${TIER:="unknown"}
 
 # Extract backend coverage percentage
@@ -76,15 +76,17 @@ check_compliance() {
 }
 extract_e2e_tests() {
     local file="$1"
+    # Extract just the E2E section to avoid false positives from Backend section
+    local e2e_section=$(sed -n '/## E2E Tests/,/## Validation Summary/p' "$file")
+    
     # Try to find Playwright specific output first: "  9 passed (19.7s)"
-    # Use single quotes for regex to avoid bash escaping issues with parentheses
-    local playwright_line=$(cat "$file" | strip_colors | grep -E '^[[:space:]]+[0-9]+ passed \([0-9.]+s\)' | tail -1 || true)
+    local playwright_line=$(echo "$e2e_section" | strip_colors | grep -E '^[[:space:]]+[0-9]+ passed \([0-9.]+s\)' | tail -1 || true)
     
     if [[ -n "$playwright_line" ]]; then
         echo "$playwright_line"
     else
         # Fallback to Pytest output: "1 passed in 2.5s"
-        cat "$file" | strip_colors | grep -E "[0-9]+ passed [a-z0-9(). ]*s" | tail -1 || true
+        echo "$e2e_section" | strip_colors | grep -E "[0-9]+ passed [a-z0-9(). ]*s" | tail -1 || true
     fi
 }
 
@@ -138,12 +140,12 @@ E2E_TESTS_RAW=$(extract_e2e_tests "$LOG_FILE")
 E2E_PASSED=$(echo "$E2E_TESTS_RAW" | grep -oE "[0-9]+ passed" | head -1)
 
 # If E2E was skipped, ignore any falsely matched passed count
-if grep -q "Skipping E2E tests" "$LOG_FILE"; then
+if grep -qE "Skipping E2E tests|No E2E tests found" "$LOG_FILE"; then
     E2E_PASSED=""
 fi
 
 # Compliance status & counts
-CONTRAST_STATUS=$(check_compliance "$LOG_FILE" "Contrast" "Papeterie Contrast Standards Report")
+CONTRAST_STATUS=$(check_compliance "$LOG_FILE" "Contrast" "Contrast Standards Report")
 CONTRAST_COUNT=$(extract_contrast_tests "$LOG_FILE")
 
 PATH_STATUS=$(check_compliance "$LOG_FILE" "Paths" "No absolute paths found")
@@ -154,19 +156,19 @@ CSS_COUNT=$(extract_css_tests "$LOG_FILE")
 
 if [[ -n "$BACKEND_COV" && -n "$FRONTEND_COV" ]]; then
     TOTAL_COV=$(echo "scale=2; ($BACKEND_COV + $FRONTEND_COV) / 2" | bc)
+elif [[ -n "$BACKEND_COV" ]]; then
+    TOTAL_COV="$BACKEND_COV"
 fi
 
 echo ""
-echo "========================================================"
-echo "Codebase Summary"
-echo "========================================================"
-python3 agent_env/bin/analyze_project.py | sed '1,3d' # Remove header lines from python script since we have our own
+echo "## Codebase Summary"
+# Find analyze_project.py relative to this script
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+python3 "$SCRIPT_DIR/analyze_project.py" --dual
 echo ""
 
 echo ""
-echo "========================================================"
-echo "Validation Summary"
-echo "========================================================"
+echo "## Detailed Metrics"
 echo ""
 
 # Timing Parsing
@@ -183,10 +185,11 @@ TOTAL_TIME=$(grep "TIMING_METRIC: Total=" "$LOG_FILE" | cut -d'=' -f2 | tail -1)
 : ${FRONTEND_TIME:="-"}
 : ${E2E_TIME:="-"}
 
-printf "  %-12s %24s %10s %8s\n" "" "Tests" "Coverage" "Time"
-printf "  %-12s %24s %10s %8s\n" "------------" "------------------------" "--------" "--------"
 
-# 1. Frontend
+# Markdown Table Output
+echo "| Metric | Tests | Coverage | Time |"
+echo "| :--- | :--- | :--- | :--- |"
+
 # 1. Frontend
 FRONTEND_COV_DISPLAY="${FRONTEND_COV:--}%"
 if [[ -z "$FRONTEND_COV" ]]; then
@@ -198,17 +201,17 @@ if [[ -z "$FRONTEND_COV" ]]; then
 fi
 
 if [[ -n "$FRONTEND_COUNTS" ]]; then
-    printf "  %-12s %24s %10s %8s\n" "Frontend" "$FRONTEND_COUNTS" "$FRONTEND_COV_DISPLAY" "${FRONTEND_TIME}"
+    echo "| Frontend | $FRONTEND_COUNTS | $FRONTEND_COV_DISPLAY | ${FRONTEND_TIME} |"
 else
     # Check if skipped
     if grep -q "Skipping frontend" "$LOG_FILE"; then
-         printf "  %-12s %24s %10s %8s\n" "Frontend" "Skipped" "-" "-"
+         echo "| Frontend | Skipped | - | - |"
     else
          # Might be fast mode or failed
-         if [[ "$TIER" == "fast" || "$TIER" == "medium" || "$TIER" == "fast" ]]; then
-             printf "  %-12s %24s %10s %8s\n" "Frontend" "$FRONTEND_COUNTS" "-" "${FRONTEND_TIME}"
+         if [[ "$TIER" == "fast" || "$TIER" == "medium" ]]; then
+             echo "| Frontend | $FRONTEND_COUNTS | - | ${FRONTEND_TIME} |"
          else
-             printf "  %-12s %24s %10s %8s\n" "Frontend" "No Results" "-" "${FRONTEND_TIME}"
+             echo "| Frontend | No Results | - | ${FRONTEND_TIME} |"
          fi
     fi
 fi
@@ -219,16 +222,15 @@ if [[ -n "$E2E_COV" ]]; then
     E2E_COV_DISPLAY="${E2E_COV}%"
 fi
 if [[ -n "$E2E_PASSED" ]]; then
-    printf "  %-12s %24s %10s %8s\n" "E2E" "$E2E_PASSED" "$E2E_COV_DISPLAY" "${E2E_TIME}"
+    echo "| E2E | $E2E_PASSED | $E2E_COV_DISPLAY | ${E2E_TIME} |"
 else
-    if grep -q "Skipping E2E tests" "$LOG_FILE"; then
-         printf "  %-12s %24s %10s %8s\n" "E2E" "Skipped" "-" "-"
+    if grep -qE "Skipping E2E tests|No E2E tests found" "$LOG_FILE"; then
+         echo "| E2E | Skipped | - | - |"
     else
-         printf "  %-12s %24s %10s %8s\n" "E2E" "Not Run/Failed" "-" "${E2E_TIME}"
+         echo "| E2E | Not Run/Failed | - | ${E2E_TIME} |"
     fi
 fi
 
-# 3. Backend
 # 3. Backend
 BACKEND_COV_DISPLAY="${BACKEND_COV:--}%"
 if [[ -z "$BACKEND_COV" ]]; then
@@ -251,29 +253,25 @@ if [[ -n "$BACKEND_PASSED" || -n "$BACKEND_DESELECTED" ]]; then
         if [[ -n "$RESULT_STR" ]]; then RESULT_STR="$RESULT_STR, $BACKEND_DESELECTED"; else RESULT_STR="$BACKEND_DESELECTED"; fi
     fi
     
-    # If we have only deselected and no passed, it might be 0 passed implicit, but we just show what we have.
-    # If result string is empty but we entered this block, default to "0 passed" if not deselected?
     if [[ -z "$RESULT_STR" ]]; then RESULT_STR="0 passed"; fi
 
-    printf "  %-12s %24s %10s %8s\n" "Backend" "$RESULT_STR" "$BACKEND_COV_DISPLAY" "${BACKEND_TIME}"
+    echo "| Backend | $RESULT_STR | $BACKEND_COV_DISPLAY | ${BACKEND_TIME} |"
 else
     if grep -q "Skipping backend" "$LOG_FILE"; then
-         printf "  %-12s %24s %10s %8s\n" "Backend" "Skipped" "-" "-"
+         echo "| Backend | Skipped | - | - |"
     else
-         printf "  %-12s %24s %10s %8s\n" "Backend" "No Results" "-" "${BACKEND_TIME}"
+         echo "| Backend | No Results | - | ${BACKEND_TIME} |"
     fi
 fi
 
 # 4. Static Checks
-printf "  %-12s %24s %10s %8s\n" "Contrast" "$CONTRAST_COUNT tests ($CONTRAST_STATUS)" "-" "-"
-printf "  %-12s %24s %10s %8s\n" "CSS" "$CSS_COUNT checks ($CSS_STATUS)" "-" "-"
-printf "  %-12s %24s %10s %8s\n" "Paths" "$PATH_COUNT check ($PATH_STATUS)" "-" "-"
+echo "| Contrast | $CONTRAST_COUNT tests ($CONTRAST_STATUS) | - | - |"
+echo "| CSS | $CSS_COUNT checks ($CSS_STATUS) | - | - |"
+echo "| Paths | $PATH_COUNT check ($PATH_STATUS) | - | - |"
 
 if [[ "$AUTOFIX_TIME" != "-" ]]; then
-    printf "  %-12s %24s %10s %8s\n" "Auto-Fix" "Done" "-" "${AUTOFIX_TIME}"
+    echo "| Auto-Fix | Done | - | ${AUTOFIX_TIME} |"
 fi
-
-printf "  %-12s %24s %10s %8s\n" "------------" "------------------------" "--------" "--------"
 
 # 5. Total (Bottom)
 if [[ -n "$TOTAL_COV" ]]; then
@@ -315,4 +313,4 @@ if [[ -n "$BASELINE_LOG" && -f "$BASELINE_LOG" ]]; then
     fi
 fi
 
-echo "========================================="
+
