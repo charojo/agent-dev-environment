@@ -22,6 +22,8 @@ import argparse
 import os
 import sys
 from pathlib import Path
+import shutil
+
 
 # Try helpfully importing toml library
 try:
@@ -41,23 +43,36 @@ except ImportError:
 # We will implement a simple parser for enabling/disabling known keys.
 
 
-def load_config(root_dir):
+def get_config_path(root_dir):
     # Priority 1: Check Project Root
     if (root_dir.parent / "config.toml").exists():
-        config_path = root_dir.parent / "config.toml"
-    # Priority 2: Check Submodule Root
-    else:
-        config_path = root_dir / "config.toml"
+        return root_dir.parent / "config.toml"
     
+    # Priority 2: Return Project Root path even if missing (to create it)
+    return root_dir.parent / "config.toml"
+
+
+def load_config(root_dir):
+    config_path = get_config_path(root_dir)
+    
+    # Initialize from template if missing
     if not config_path.exists():
-        return {}
+        template_path = root_dir / "config/templates/config.toml"
+        if template_path.exists():
+            print(f"✨ Initializing {config_path} from template...")
+            shutil.copy2(template_path, config_path)
+        else:
+            return {}
+            
     with open(config_path, "rb") as f:
         return toml.load(f)
 
 
-def save_lines(config_path, lines):
+def save_lines(root_dir, lines):
+    config_path = get_config_path(root_dir)
     with open(config_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
+
 
 
 def toggle_config_in_file(root_dir, key_path, value):
@@ -67,11 +82,14 @@ def toggle_config_in_file(root_dir, key_path, value):
     This is fragile but suffices for this controlled environment.
     key_path: languages.python.enabled
     """
-    # Priority 1: Check Project Root
-    if (root_dir.parent / "config.toml").exists():
-        config_path = root_dir.parent / "config.toml"
-    else:
-        config_path = root_dir / "config.toml"
+    is_template_init = False
+    
+    config_path = get_config_path(root_dir)
+    
+    # Auto-init if missing
+    if not config_path.exists():
+         load_config(root_dir) # Triggers template copy
+         is_template_init = True
     
     if not config_path.exists():
         return
@@ -118,7 +136,7 @@ def toggle_config_in_file(root_dir, key_path, value):
         else:
             new_lines.append(line)
 
-    save_lines(config_path, new_lines)
+    save_lines(root_dir, new_lines)
 
 
 def wizard(root_dir):
@@ -166,7 +184,7 @@ def wizard(root_dir):
     configure_shell_env(root_dir)
 
     # Mark setup as complete
-    (root_dir / ".agent_setup_complete").touch()
+    (agent_env_dir / ".agent_setup_complete").touch()
     print("\n✅  Configuration complete!\n")
 
 
