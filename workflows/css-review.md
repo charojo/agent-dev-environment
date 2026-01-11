@@ -48,10 +48,10 @@ grep -A5 'className="btn-icon"' src/web/src/components/*.jsx | grep -E "(backgro
 ## 4. Run Automated Checks
 
 // turbo
-./scripts/check_css_compliance.py
+../bin/check_css_compliance.py
 
 // turbo
-./scripts/check_contrast.py
+../bin/check_contrast.py
 
 ## 5. Cross-Reference Design Tokens
 

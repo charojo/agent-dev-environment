@@ -42,7 +42,13 @@ except ImportError:
 
 
 def load_config(root_dir):
-    config_path = root_dir / "config.toml"
+    # Priority 1: Check Project Root
+    if (root_dir.parent / "config.toml").exists():
+        config_path = root_dir.parent / "config.toml"
+    # Priority 2: Check Submodule Root
+    else:
+        config_path = root_dir / "config.toml"
+    
     if not config_path.exists():
         return {}
     with open(config_path, "rb") as f:
@@ -61,7 +67,12 @@ def toggle_config_in_file(root_dir, key_path, value):
     This is fragile but suffices for this controlled environment.
     key_path: languages.python.enabled
     """
-    config_path = root_dir / "config.toml"
+    # Priority 1: Check Project Root
+    if (root_dir.parent / "config.toml").exists():
+        config_path = root_dir.parent / "config.toml"
+    else:
+        config_path = root_dir / "config.toml"
+    
     if not config_path.exists():
         return
 

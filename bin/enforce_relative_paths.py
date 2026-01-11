@@ -14,7 +14,7 @@ PATTERNS = [
     re.compile(r"file:///home/[\w.-]+/"),
     re.compile(rf"{re.escape(str(PROJECT_ROOT))}"),
     # Common user home pattern in case project root detection is slightly off in some envs
-    re.compile(r"/home/[\w.-]+/projects/papeterie-engine"),
+    re.compile(r"/home/[\w.-]+/projects/[\w.-]+"),
 ]
 
 # Binary extensions to skip

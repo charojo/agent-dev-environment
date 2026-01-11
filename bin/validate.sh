@@ -30,9 +30,9 @@ cd "$ROOT_DIR"
 # Check for First Run or explicit configuration
 if [[ "$1" != "--help" && "$1" != "-h" ]]; then
     if [[ ! -f ".agent_setup_complete" ]] || [[ "$1" == "--configure" ]]; then
-        if [ -f "bin/configure.py" ]; then
+        if [ -f "$SCRIPT_DIR/configure.py" ]; then
             echo -e "${YELLOW}Running initial configuration...${NC}"
-            uv run python bin/configure.py --interactive
+            uv run python "$SCRIPT_DIR/configure.py" --interactive
         fi
     fi
 fi

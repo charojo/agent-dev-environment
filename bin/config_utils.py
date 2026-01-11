@@ -22,15 +22,20 @@ except ImportError:
 
 
 def load_config(root_dir):
-    config_path = root_dir / "config.toml"
-    if not config_path.exists():
-        # Fallback to agent_env/config.toml if in a submodule context
-        if (root_dir / "agent_env" / "config.toml").exists():
-            config_path = root_dir / "agent_env" / "config.toml"
-        elif (root_dir / ".agent" / "config.toml").exists():
-            config_path = root_dir / ".agent" / "config.toml"
-        else:
-            return {}
+    # Priority 1: Check Project Root (one level up from submodule root)
+    if (root_dir.parent / "config.toml").exists():
+        config_path = root_dir.parent / "config.toml"
+    # Priority 2: Check Submodule Root
+    elif (root_dir / "config.toml").exists():
+        config_path = root_dir / "config.toml"
+    # Priority 3: Fallback to agent_env/config.toml if in a submodule context
+    elif (root_dir / "agent_env" / "config.toml").exists():
+        config_path = root_dir / "agent_env" / "config.toml"
+    # Priority 4: Fallback to .agent/config.toml
+    elif (root_dir / ".agent" / "config.toml").exists():
+        config_path = root_dir / ".agent" / "config.toml"
+    else:
+        return {}
 
     try:
         with open(config_path, "rb") as f:
