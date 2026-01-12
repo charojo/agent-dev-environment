@@ -10,11 +10,10 @@
 # - Markdown and plain-text report generation.
 
 import argparse
-import os
 import json
-from pathlib import Path
-
+import os
 import sys
+from pathlib import Path
 
 # Ensure we can import config_utils from the same directory
 sys.path.append(str(Path(__file__).parent))
@@ -25,7 +24,31 @@ except ImportError:
     pass
 
 # Configuration
-PROJECT_ROOT = Path(__file__).parent.parent
+# Configuration
+# Determine PROJECT_ROOT by looking for config.toml, up to 3 levels up
+CURRENT_DIR = Path(__file__).parent
+POSSIBLE_ROOTS = [
+    Path.cwd(),  # Prioritize current directory (set by validate.sh)
+    CURRENT_DIR.parent.parent,  # project root (if agent_env is submodule)
+    CURRENT_DIR.parent,  # agent_env
+]
+
+PROJECT_ROOT = CURRENT_DIR.parent  # Fallback
+# First pass: Look for config.toml (strongest signal)
+found = False
+for p in POSSIBLE_ROOTS:
+    if (p / "config.toml").exists():
+        PROJECT_ROOT = p
+        found = True
+        break
+
+# Second pass: Look for .git if config.toml not found
+if not found:
+    for p in POSSIBLE_ROOTS:
+        if (p / ".git").exists():
+            PROJECT_ROOT = p
+            break
+
 SRC_DIR = PROJECT_ROOT / "src"
 
 
@@ -119,11 +142,7 @@ def print_text_table(results, sorted_langs, metrics, keys):
 def print_markdown_table(results, sorted_langs, metrics, keys):
     # Dynamic Headers
     # | Metric | Lang1 | Lang2 | Total |
-    header = (
-        "| Metric | "
-        + " | ".join([lang.capitalize() for lang in sorted_langs])
-        + " | Total |"
-    )
+    header = "| Metric | " + " | ".join([lang.capitalize() for lang in sorted_langs]) + " | Total |"
     divider = "| :--- | " + " | ".join([":---" for _ in sorted_langs]) + " | :--- |"
 
     print(header)
@@ -171,9 +190,7 @@ def print_config_results(results_file, markdown=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze project statistics.")
-    parser.add_argument(
-        "--markdown", action="store_true", help="Output in Markdown format"
-    )
+    parser.add_argument("--markdown", action="store_true", help="Output in Markdown format")
     parser.add_argument(
         "--dual",
         action="store_true",

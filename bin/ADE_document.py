@@ -8,10 +8,10 @@
 # 3. **Submodule Scanning**: Detects if running as a submodule and documents siblings.
 
 import argparse
-import shutil
-import subprocess
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 # Configuration
@@ -172,9 +172,7 @@ def extract_documentation(root_dir):
                             except (ValueError, FileNotFoundError):
                                 return match.group(0)
 
-                        clean_line = re.sub(
-                            r"(!?\[.*?\])\((.*?)\)", fix_link, clean_line
-                        )
+                        clean_line = re.sub(r"(!?\[.*?\])\((.*?)\)", fix_link, clean_line)
                         current_doc_block.append(clean_line)
 
             if current_doc_block:
@@ -237,9 +235,7 @@ def generate_pdf(input_file, output_file):
         # cmd.extend(["--metadata", f"title={input_file.stem.replace('_', ' ')}"])
         cmd.append("--pdf-engine-opt=--enable-local-file-access")
     elif not shutil.which("pdflatex"):
-        print(
-            "Warning: No standard PDF engine (wkhtmltopdf, pdflatex) found. Pandoc might fail."
-        )
+        print("Warning: No standard PDF engine (wkhtmltopdf, pdflatex) found. Pandoc might fail.")
 
     try:
         subprocess.run(cmd, check=True, cwd=input_file.parent)
@@ -316,9 +312,7 @@ def generate_typedoc(project_path, output_dir, project_name):
                 typedoc_bin = str(root_bin)
 
     if not typedoc_bin:
-        print(
-            f"Warning ⚠️ : 'typedoc' not found for {project_name}. Falling back to Doxygen."
-        )
+        print(f"Warning ⚠️ : 'typedoc' not found for {project_name}. Falling back to Doxygen.")
         return
 
     print(f"Generating TypeDoc for {project_name}...")
@@ -343,9 +337,7 @@ def generate_typedoc(project_path, output_dir, project_name):
         cmd.extend(["--entryPointStrategy", "expand", str(project_path)])
 
     try:
-        subprocess.run(
-            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
-        )
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         print(f"Success ✅: TypeDoc generated in {td_output}")
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode() if e.stderr else "Unknown error"
@@ -439,9 +431,7 @@ def update_diagram_links(root_dir):
         print(f"Updated {updates_made} diagram links.")
 
 
-def process_project(
-    project_path, output_dir, project_name=None, generate_pdf_flag=False
-):
+def process_project(project_path, output_dir, project_name=None, generate_pdf_flag=False):
     """
     Process a single project directory: extract docs, write spec, generate PDF.
     """
@@ -492,9 +482,7 @@ def generate_structure_map(project_path, output_file, docs):
     print(f"Generating structure map for {project_path.name}...")
 
     dot_content = ["digraph ProjectStructure {"]
-    dot_content.append(
-        '  node [shape=box, style=filled, fillcolor=white, fontname="Helvetica"];'
-    )
+    dot_content.append('  node [shape=box, style=filled, fillcolor=white, fontname="Helvetica"];')
     dot_content.append('  edge [color="#666666"];')
     dot_content.append('  bgcolor="transparent";')
     dot_content.append(f'  label="{project_path.name} Structure";')
@@ -594,9 +582,7 @@ def generate_structure_map(project_path, output_file, docs):
 
     # Render SVG
     try:
-        subprocess.run(
-            ["dot", "-Tsvg", str(dot_file), "-o", str(output_file)], check=True
-        )
+        subprocess.run(["dot", "-Tsvg", str(dot_file), "-o", str(output_file)], check=True)
         print(f"Success ✅: Structure map -> {output_file}")
         # Clean up DOT? Maybe keep for debug.
     except subprocess.CalledProcessError as e:
@@ -604,9 +590,7 @@ def generate_structure_map(project_path, output_file, docs):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate documentation and update links."
-    )
+    parser = argparse.ArgumentParser(description="Generate documentation and update links.")
     parser.add_argument(
         "--pdf",
         action="store_true",

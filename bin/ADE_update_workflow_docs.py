@@ -55,9 +55,7 @@ def update_docs():
     new_section += f"{end_marker}"
 
     # Replace the section
-    pattern = re.compile(
-        f"{re.escape(start_marker)}.*{re.escape(end_marker)}", re.DOTALL
-    )
+    pattern = re.compile(f"{re.escape(start_marker)}.*{re.escape(end_marker)}", re.DOTALL)
     new_content = pattern.sub(new_section, content)
 
     DOCS_FILE.write_text(new_content)

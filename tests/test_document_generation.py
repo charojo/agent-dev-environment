@@ -1,7 +1,8 @@
-import pytest
 import shutil
-from pathlib import Path
 import sys
+from pathlib import Path
+
+import pytest
 
 # Add bin directory to path for imports if needed,
 # but we will likely run the script via subprocess to fully test CLI behavior.
@@ -96,9 +97,7 @@ def test_document_generation(temp_project, capsys):
     document.GEN_IMAGES_DIR.mkdir(exist_ok=True)
 
     # Re-run structure map part specifically to verify isolation
-    document.generate_structure_map(
-        temp_project, document.GEN_IMAGES_DIR / "structure.svg", {}
-    )
+    document.generate_structure_map(temp_project, document.GEN_IMAGES_DIR / "structure.svg", {})
     assert (document.GEN_IMAGES_DIR / "structure.svg").exists()
 
     # 4. Verify Doxygen

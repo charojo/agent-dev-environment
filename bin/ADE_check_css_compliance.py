@@ -133,9 +133,7 @@ def main():
         threshold = 30 if jsx_file.name in INLINE_STYLE_EXCEPTIONS else 15
         if style_count > threshold:
             style_issues += 1
-            file_issues.append(
-                f"  Excessive inline styles: {style_count} (threshold: {threshold})"
-            )
+            file_issues.append(f"  Excessive inline styles: {style_count} (threshold: {threshold})")
 
         # Check btn-icon overrides
         overrides = find_btn_icon_overrides(jsx_file)

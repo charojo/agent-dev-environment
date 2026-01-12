@@ -6,8 +6,8 @@ This script parses `config.toml` and allows shell scripts to query values
 such as enabled languages, features, and their associated extras/markers.
 """
 
-import sys
 import argparse
+import sys
 from pathlib import Path
 
 # Try importing tomllib (Python 3.11+) or tomli
@@ -63,24 +63,16 @@ def main():
 
     # Command: get <path>
     get_parser = subparsers.add_parser("get", help="Get a specific value")
-    get_parser.add_argument(
-        "path", help="Dot-notation path (e.g. languages.python.enabled)"
-    )
+    get_parser.add_argument("path", help="Dot-notation path (e.g. languages.python.enabled)")
 
     # Command: get-extras
-    subparsers.add_parser(
-        "get-extras", help="Get list of pip extras for enabled features"
-    )
+    subparsers.add_parser("get-extras", help="Get list of pip extras for enabled features")
 
     # Command: get-markers
-    subparsers.add_parser(
-        "get-markers", help="Get pytest markers to EXCLUDE disabled features"
-    )
+    subparsers.add_parser("get-markers", help="Get pytest markers to EXCLUDE disabled features")
 
     # Command: get-enabled-languages
-    subparsers.add_parser(
-        "get-enabled-languages", help="Get list of enabled language keys"
-    )
+    subparsers.add_parser("get-enabled-languages", help="Get list of enabled language keys")
 
     args = parser.parse_args()
 
