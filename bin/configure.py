@@ -276,6 +276,7 @@ def main():
 
     if should_run_wizard:
         wizard(root_dir)
+        ensure_docs_gen_ignored(root_dir)
         sys.exit(0)
 
     if not is_quiet:
@@ -294,6 +295,9 @@ def main():
     if args.disable_feature:
         for feat in args.disable_feature:
             toggle_config_in_file(root_dir, f"features.{feat}.enabled", False)
+
+    # Always ensure docs/gen is ignored whenever configuration is updated
+    ensure_docs_gen_ignored(root_dir)
 
     if args.check_diff:
         removed = check_diff(root_dir)
@@ -361,6 +365,28 @@ def configure_shell_env(root_dir):
         print(f"👉 Please run: source {rc_file}")
     except Exception as e:
         print(f"Error writing to {rc_file}: {e}")
+
+
+def ensure_docs_gen_ignored(root_dir):
+    """
+    Ensures that the docs/gen directory is present in the project's .gitignore.
+    """
+    project_root = root_dir.parent
+    gitignore_path = project_root / ".gitignore"
+    
+    ignore_entry = "docs/gen/\n"
+    
+    if gitignore_path.exists():
+        content = gitignore_path.read_text()
+        if "docs/gen/" not in content:
+            print("Adding docs/gen/ to .gitignore...")
+            with open(gitignore_path, "a") as f:
+                if not content.endswith("\n"):
+                    f.write("\n")
+                f.write(f"# Automated Doc Generation\n{ignore_entry}")
+    else:
+        print("Creating .gitignore with docs/gen/...")
+        gitignore_path.write_text(f"# Automated Doc Generation\n{ignore_entry}")
 
 
 if __name__ == "__main__":

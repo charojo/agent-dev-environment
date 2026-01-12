@@ -13,7 +13,11 @@ extensions = [".ts", ".tsx", ".js", ".jsx"]
 
 [features.documentation]
 enabled = false
-description = "Advanced documentation (Doxygen, Graphviz diagrams, PDF generation)"
+description = "Design Specifications and Diagrams (Markdown/PDF)"
+
+[features.api_docs]
+enabled = false
+description = "API Documentation (Doxygen for Python, TypeDoc for TS/JS)"
 
 [features.pygame]
 enabled = false

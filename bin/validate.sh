@@ -10,7 +10,7 @@
 # - **Full**: Comprehensive validation including E2E and coverage reporting.
 # - **Exhaustive**: Maximum coverage, mutation testing, and parallel execution.
 #
-# See architecture: [validate_workflow.svg](../docs/assets/images/validate_workflow.svg) <!-- @diagram: validate_workflow.svg -->
+# See architecture: [validate_workflow.svg](../docs/assets/diagrams/validate_workflow.svg) <!-- @diagram: validate_workflow.svg -->
 
 set -eo pipefail
 
@@ -129,11 +129,11 @@ ${YELLOW}Options:${NC}
   --help, -h     Show this help
 
 ${YELLOW}Examples:${NC}
-  ./scripts/validate.sh --fast         # Fast: quick changeset check
-  ./scripts/validate.sh --medium       # Medium: file-level coverage
-  ./scripts/validate.sh --full         # Full: pre-commit validation
-  ./scripts/validate.sh --exhaustive   # Exhaustive: pre-merge
-  ./scripts/validate.sh --full --live  # Full + API tests
+  ./bin/validate.sh --fast         # Fast: quick changeset check
+  ./bin/validate.sh --medium       # Medium: file-level coverage
+  ./bin/validate.sh --full         # Full: pre-commit validation
+  ./bin/validate.sh --exhaustive   # Exhaustive: pre-merge
+  ./bin/validate.sh --full --live  # Full + API tests
 
 ${YELLOW}Tier Details:${NC}
   Fast:       LOC-only (testmon), no lint, no E2E

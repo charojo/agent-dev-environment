@@ -11,13 +11,19 @@ import argparse
 import os
 import re
 import shutil
+import socket
 import subprocess
+import sys
 from pathlib import Path
 
+from ADE_config_utils import load_config, get_value
+
 # Configuration
-# Default to current directory script is in -> parent -> parent (assuming bin/document.py)
+# Default to current directory script is in -> parent -> parent (assuming bin/ADE_document.py)
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_PROJECT_ROOT = SCRIPT_DIR.parent
+
+# These will be initialized in main() based on context
 DOCS_DIR = DEFAULT_PROJECT_ROOT / "docs"
 GEN_DOCS_DIR = DOCS_DIR / "gen"
 GEN_IMAGES_DIR = GEN_DOCS_DIR / "images"
@@ -244,7 +250,53 @@ def generate_pdf(input_file, output_file):
         print(f"Error ❌: Failed to generate PDF for {input_file.name}. {e}")
 
 
-def generate_doxygen(project_path, output_dir, project_name):
+def fix_doxygen_links(html_dir):
+    """
+    Post-processes generated HTML to fix Markdown links that Doxygen didn't resolve.
+    Specifically targets links in index.html (README) pointing to docs/ or other .md files.
+    """
+    index_file = html_dir / "index.html"
+    if not index_file.exists():
+        return
+
+    print(f"Post-processing links in {index_file.name}...")
+    
+    with open(index_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Pattern: href="docs/blogs/some-file.md#anchor"
+    # Doxygen names them: md_docs_blogs_some_file.html#anchor
+    def translate_md_link(match):
+        rel_path = match.group(1)
+        anchor = match.group(2) or ""
+        
+        # Doxygen's naming convention for Markdown pages:
+        # md_<path_with_underscores_replacing_slashes_and_dashes_and_dots>
+        # Except the final .html
+        
+        normalized = rel_path.replace("/", "_").replace("-", "_").replace(".", "_")
+        # Ensure we don't have double underscores if they were already there
+        while "__" in normalized:
+            normalized = normalized.replace("__", "_")
+            
+        new_href = f"md_{normalized}.html{anchor}"
+        
+        # Check if the file actually exists before replacing
+        if (html_dir / new_href.split("#")[0]).exists():
+            return f'href="{new_href}"'
+        
+        return match.group(0)
+
+    # Simplified regex for cross-references in the same Doxygen project
+    new_content = re.sub(r'href="([^"]+)\.md(#?[^"]*)"', translate_md_link, content)
+
+    if new_content != content:
+        with open(index_file, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        print(f"  Successfully transformed Markdown links in {index_file.name}")
+
+
+def generate_doxygen(project_path, output_dir, project_name, extra_inputs=None):
     """
     Generates Doxygen documentation for the given project path.
     """
@@ -257,26 +309,59 @@ def generate_doxygen(project_path, output_dir, project_name):
     doxy_output = output_dir / "doxygen" / project_name
     doxy_output.mkdir(parents=True, exist_ok=True)
 
-    # Create a temporary Doxyfile
+    # Input paths consolidation
+    input_paths = [project_path]
+    if extra_inputs:
+        for p in extra_inputs:
+            p_val = Path(p)
+            try:
+                if p_val.is_relative_to(project_path):
+                    continue
+            except ValueError:
+                pass
+            input_paths.append(p_val)
+
+    # Link Normalization: Doxygen 1.9.1 struggles with cross-links in tables if prefixed with 'docs/'
+    # We'll create a normalized copy of input files if they are in the root
+    inputs_str = " ".join([f'"{p}"' for p in input_paths])
+
+    main_page_config = ""
+    main_page_candidate = project_path / "README.md"
+    if main_page_candidate.exists():
+        main_page_config = f"USE_MDFILE_AS_MAINPAGE = {main_page_candidate}"
+
     doxyfile_content = f"""
     PROJECT_NAME           = "{project_name}"
     OUTPUT_DIRECTORY       = "{doxy_output}"
-    INPUT                  = "{project_path}"
+    INPUT                  = {inputs_str}
     RECURSIVE              = YES
     FILE_PATTERNS          = *.py *.js *.jsx *.ts *.tsx *.md *.sh
     GENERATE_HTML          = YES
     GENERATE_LATEX         = NO
     WARN_IF_UNDOCUMENTED   = NO
     QUIET                  = YES
+    FULL_PATH_NAMES        = NO
+    
+    {main_page_config}
     
     # Graphics & UML
     HAVE_DOT               = YES
+    DOT_IMAGE_FORMAT       = svg
+    INTERACTIVE_SVG        = YES
+    DOT_TRANSPARENT        = YES
     UML_LOOK               = YES
     CALL_GRAPH             = YES
     CALLER_GRAPH           = YES
     GRAPHICAL_HIERARCHY    = YES
     DIRECTORY_GRAPH        = YES
-    INTERACTIVE_SVG        = YES
+    
+    # Image Paths for Markdown
+    IMAGE_PATH             = "{DOCS_DIR}" "{DOCS_DIR}/assets/diagrams" "{DOCS_DIR}/assets/images" "{GEN_IMAGES_DIR}"
+    
+    # Exclusions to reduce size
+    EXCLUDE_PATTERNS       = **/node_modules/* **/venv/* **/.tox/* **/.venv/* **/logs/* **/dist/* **/build/*
+    EXCLUDE                = {doxy_output} {output_dir.parent}/gen
+    STRIP_FROM_PATH        = "{project_path.parent}" "{project_path}"
     """
 
     doxyfile_path = doxy_output / "Doxyfile"
@@ -285,6 +370,28 @@ def generate_doxygen(project_path, output_dir, project_name):
 
     try:
         subprocess.run(["doxygen", str(doxyfile_path)], check=True, cwd=doxy_output)
+        
+        # Post-process: Mirror assets to ensure relative links work
+        # 1. Mirror 'docs/assets' to doxy_output (one level up from html) for ../assets links
+        # 2. Mirror 'docs/assets' to doxy_output/html/docs/assets for docs/assets links
+        assets_src = project_path.parent / "docs" / "assets" if (project_path.parent / "docs" / "assets").exists() else project_path / "docs" / "assets"
+        if assets_src.exists():
+            # For ../assets/
+            assets_dest_root = doxy_output / "assets"
+            if assets_dest_root.exists():
+                shutil.rmtree(assets_dest_root)
+            shutil.copytree(assets_src, assets_dest_root)
+            
+            # For docs/assets/ (from index.html)
+            assets_dest_html = doxy_output / "html" / "docs" / "assets"
+            assets_dest_html.parent.mkdir(parents=True, exist_ok=True)
+            if assets_dest_html.exists():
+                shutil.rmtree(assets_dest_html)
+            shutil.copytree(assets_src, assets_dest_html)
+
+        # 3. Fix links in index.html
+        fix_doxygen_links(doxy_output / "html")
+
         print(f"Success ✅: Doxygen generated in {doxy_output}/html")
     except subprocess.CalledProcessError as e:
         print(f"Error ❌: Doxygen generation failed for {project_name}. {e}")
@@ -431,7 +538,14 @@ def update_diagram_links(root_dir):
         print(f"Updated {updates_made} diagram links.")
 
 
-def process_project(project_path, output_dir, project_name=None, generate_pdf_flag=False):
+def process_project(
+    project_path,
+    output_dir,
+    project_name=None,
+    generate_pdf_flag=False,
+    skip_doxygen=False,
+    extra_inputs=None,
+):
     """
     Process a single project directory: extract docs, write spec, generate PDF.
     """
@@ -446,12 +560,17 @@ def process_project(project_path, output_dir, project_name=None, generate_pdf_fl
     # 2. Write Design Spec
     prefix = f"{project_name}_"
     spec_file = output_dir / f"{prefix}DESIGN_SPEC.md"
-    write_design_spec(docs, spec_file, project_name)
+    
+    # We only write the spec if there is content
+    if docs:
+        write_design_spec(docs, spec_file, project_name)
 
-    # 3. Generate PDF
-    if generate_pdf_flag:
-        pdf_file = output_dir / f"{prefix}DESIGN_SPEC.pdf"
-        generate_pdf(spec_file, pdf_file)
+        # 3. Generate PDF
+        if generate_pdf_flag and spec_file.exists():
+            pdf_file = output_dir / f"{prefix}DESIGN_SPEC.pdf"
+            generate_pdf(spec_file, pdf_file)
+    else:
+        print(f"Note: No ## @DOC blocks found for {project_name}. Skipping Design Spec.")
 
     # Cleanup legacy file if exists
     legacy_spec = DOCS_DIR / "DESIGN_SPEC.md"
@@ -465,10 +584,12 @@ def process_project(project_path, output_dir, project_name=None, generate_pdf_fl
     generate_structure_map(project_path, structure_file, docs)
 
     # 5. Generate Doxygen
-    generate_doxygen(project_path, output_dir, project_name)
+    if not skip_doxygen:
+        generate_doxygen(project_path, output_dir, project_name, extra_inputs=extra_inputs)
 
     # 6. Generate TypeDoc (specialized for TS/JS)
-    generate_typedoc(project_path, output_dir, project_name)
+    if not skip_doxygen:
+        generate_typedoc(project_path, output_dir, project_name)
 
 
 def generate_structure_map(project_path, output_file, docs):
@@ -589,7 +710,35 @@ def generate_structure_map(project_path, output_file, docs):
         print(f"Error ❌: Failed to render structure map. {e}")
 
 
+def ensure_docs_server_running(root_dir):
+    """
+    Checks if the documentation server is running on port 8080.
+    If not, starts it as a background process.
+    """
+    port = 8080
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(("localhost", port)) == 0:
+            print(f"✅ Documentation server already running at http://localhost:{port}")
+            return
+
+    script_path = root_dir / "bin" / "ADE_serve_docs.py"
+    if not script_path.exists():
+        return
+
+    print("🚀 Starting documentation server in background...")
+    try:
+        # Launch as a detached process
+        if os.name == "nt":
+            subprocess.Popen([sys.executable, str(script_path)], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+        else:
+            subprocess.Popen([sys.executable, str(script_path)], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        print(f"Warning ⚠️ : Failed to start doc server automatically. {e}")
+
+
 def main():
+    global DOCS_DIR, GEN_DOCS_DIR, GEN_IMAGES_DIR
+
     parser = argparse.ArgumentParser(description="Generate documentation and update links.")
     parser.add_argument(
         "--pdf",
@@ -600,39 +749,53 @@ def main():
 
     project_root, is_submodule, superproject_root = get_project_context()
 
+    # If integrated as a submodule, output to the superproject's docs/gen
+    if is_submodule and superproject_root:
+        DOCS_DIR = superproject_root / "docs"
+        GEN_DOCS_DIR = DOCS_DIR / "gen"
+        GEN_IMAGES_DIR = GEN_DOCS_DIR / "images"
+
+    # Ensure directories exist
+    GEN_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    GEN_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
     # Clean gen dir before starting
     clean_gen_dir()
+
+    # 0. Generate Diagrams (ensure SVGs are fresh)
+    print("\n--- Generating Diagrams ---")
+    try:
+        import ADE_generate_diagrams
+        ADE_generate_diagrams.main()
+    except ImportError:
+        print("Warning ⚠️ : 'ADE_generate_diagrams' not found. Skipping diagram generation.")
+    except Exception as e:
+        print(f"Warning ⚠️ : Diagram generation failed. {e}")
 
     print(f"Execution Context: {'Submodule' if is_submodule else 'Standalone'}")
     print(f"Current Project Root: {project_root}")
     if is_submodule:
         print(f"Superproject Root: {superproject_root}")
 
+    # Load project name from config
+    config = load_config(DEFAULT_PROJECT_ROOT)
+    proj_name = get_value(config, "project.name") or "Project"
+    api_docs_enabled = get_value(config, "features.api_docs.enabled")
+    if api_docs_enabled is None: api_docs_enabled = True # Default to True if doc feature is enabled
+
     # Process local project (agent)
-    # We use "AGENT" as the name for the local kernel to get AGENT_ prefixes
-    process_project(project_root, GEN_DOCS_DIR, "AGENT", args.pdf)
-
-    # If submodule, scan siblings
+    # Process only major components to reduce bloat
+    print("\n--- Consolidating Documentation ---")
+    
+    # 1. Main Project (consolidated Engine + docs)
     if is_submodule and superproject_root:
-        print("\nScanning siblings in superproject...")
-        for item in superproject_root.iterdir():
-            if item.is_dir() and item != project_root:
-                # Exclude common non-project directories
-                if item.name.startswith(".") or item.name in [
-                    "node_modules",
-                    "venv",
-                    "env",
-                ]:
-                    continue
-
-                # Check if it looks like a project (has src, package.json, or pyproject.toml ?)
-                # For now, lax check: just document it.
-                # Prefix with submodule name
-                process_project(item, GEN_DOCS_DIR, f"{item.name}", args.pdf)
-
-    # Update diagram links is generally project-wide or specific?
-    # Keeping it to current project root for now to avoid messing with parent improperly
+        # Instead of scanning all siblings, we focus on 'src' and 'docs' being together
+        process_project(superproject_root, GEN_DOCS_DIR, proj_name, args.pdf, skip_doxygen=not api_docs_enabled)
+    
     update_diagram_links(project_root)
+
+    # Automatically serve if requested or integrated
+    ensure_docs_server_running(DEFAULT_PROJECT_ROOT)
 
 
 if __name__ == "__main__":
