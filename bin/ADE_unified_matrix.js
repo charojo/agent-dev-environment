@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const rootDir = path.join(__dirname, '..');
+const rootDir = path.join(__dirname, '..', '..');
 const logsDir = path.join(rootDir, 'logs');
 const outputFile = path.join(logsDir, 'test-coverage-matrix.txt');
 
@@ -12,7 +12,8 @@ console.log('Starting Unified Coverage Matrix Generation...');
 // 1. Generate Backend Matrix
 console.log('\n--- Generating Backend Matrix ---');
 try {
-    execSync('python3 scripts/generate_backend_matrix.py', { cwd: rootDir, stdio: 'inherit' });
+    // Note: Script is now in agent_env/bin and has ADE_ prefix
+    execSync('uv run python agent_env/bin/ADE_generate_backend_matrix.py', { cwd: rootDir, stdio: 'inherit' });
 } catch (e) {
     console.error('Failed to generate backend matrix');
 }

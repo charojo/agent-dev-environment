@@ -117,11 +117,9 @@ def test_diagram_link_update():
         # Create a source file with a stale link
         src_file = tmp_path / "README.md"
         src_file.write_text(
-            """
-# Readme
-
-# See architecture: [Architecture Diagram](../docs/assets/images/architecture.svg) <!-- @diagram: architecture.svg -->
-""",
+            "# Readme\n\n"
+            "# See architecture: [Architecture Diagram](../docs/assets/images/architecture.svg) "
+            "<!-- @diagram: architecture.svg -->\n",
             encoding="utf-8",
         )
 

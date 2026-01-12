@@ -173,7 +173,8 @@ def print_config_results(results_file, markdown=False):
             print("| :--- | :--- | :--- | :--- | :--- |")
             for r in report:
                 print(
-                    f"| {r['config']} | {r['status']} | {r['total_size']} | {r['venv_size']} | {r['node_modules_size']} |"
+                    f"| {r['config']} | {r['status']} | {r['total_size']} | "
+                    f"{r['venv_size']} | {r['node_modules_size']} |"
                 )
         else:
             print("\n=== Configuration Test Results ===")
@@ -182,7 +183,8 @@ def print_config_results(results_file, markdown=False):
             print("-" * len(header))
             for r in report:
                 print(
-                    f"{r['config']:<20} | {r['status']:<6} | {r['total_size']:<10} | {r['venv_size']:<10} | {r['node_modules_size']:<10}"
+                    f"{r['config']:<20} | {r['status']:<6} | {r['total_size']:<10} | "
+                    f"{r['venv_size']:<10} | {r['node_modules_size']:<10}"
                 )
     except Exception as e:
         print(f"Error reading config results: {e}")

@@ -5,7 +5,8 @@
 # diagrams (SVG/PNG). It also triggers source code link updates to ensure
 # documentation always points to the latest generated assets.
 #
-# See architecture: [validate_workflow.svg](../docs/assets/diagrams/validate_workflow.svg) <!-- @diagram: validate_workflow.svg -->
+# See architecture: [validate_workflow.svg](../docs/assets/diagrams/validate_workflow.svg)
+# <!-- @diagram: validate_workflow.svg -->
 
 """
 Automated Diagram Generator for Papeterie Engine.
@@ -13,7 +14,6 @@ Scans the repository for *.dot files and compiles them to *.svg using Graphviz.
 """
 
 import argparse
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -52,18 +52,19 @@ def compile_dot_to_file(dot_file, fmt="png", dpi=300):
         sys.exit(1)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Generate diagrams from DOT files.")
-    parser.add_argument("directory", nargs="?", help="Directory to scan (defaults to git root or current dir)")
-    args = parser.parse_args()
+    parser.add_argument(
+        "directory", nargs="?", help="Directory to scan (defaults to git root or current dir)"
+    )
+    args = parser.parse_args(argv)
 
     if args.directory:
         project_root = Path(args.directory).resolve()
     else:
         try:
             root_str = subprocess.check_output(
-                ["git", "rev-parse", "--show-toplevel"],
-                universal_newlines=True
+                ["git", "rev-parse", "--show-toplevel"], universal_newlines=True
             ).strip()
             project_root = Path(root_str)
         except subprocess.CalledProcessError:

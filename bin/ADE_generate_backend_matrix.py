@@ -1,8 +1,8 @@
 import json
 import os
 
-# Path to .coverage database (usually in root)
-DB_PATH = ".coverage"
+# Path to .coverage database
+DB_PATH = "logs/.coverage"
 OUTPUT_FILE = "logs/backend_matrix.json"
 
 

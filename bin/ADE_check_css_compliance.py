@@ -96,7 +96,6 @@ def find_btn_icon_overrides(file_path: Path) -> list[tuple[int, str]]:
 def main():
     parser = argparse.ArgumentParser(description="Check CSS compliance")
     parser.add_argument("--output", type=str, help="Output file path")
-    parser.add_argument("--strict", action="store_true", help="Fail on any violation")
     args = parser.parse_args()
 
     components_dir = Path("src/web/src/components")
@@ -164,8 +163,8 @@ def main():
         report_lines.append("✅ All checks passed!")
         exit_code = 0
     else:
-        report_lines.append("⚠️  Issues found - review recommended")
-        exit_code = 1 if args.strict else 0
+        report_lines.append("⚠️  Issues found - validation failed")
+        exit_code = 1
 
     report = "\n".join(report_lines)
 

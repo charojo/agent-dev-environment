@@ -187,15 +187,14 @@ Workflows are pre-defined sets of instructions that agents can access to perform
 
 <!-- WORKFLOWS_START -->
 | Command | Description |
-| :--- | :--- |
-| `/architecture` | Architectural Changes and Big Feature Implementations |
-| `/cleanup` | Cleanup system files, caches, and logs |
-| `/css-review` | Review CSS compliance and design system usage before merging |
-| `/design-planning` | Design and Planning tasks (UI/UX, System Design) |
-| `/docs-path-integrity` | How to maintain path integrity and avoid absolute paths in documentation |
-| `/security-review` | Perform a basic security review of the project |
-| `/ux-review` | Perform a UX and Accessibility Review of the application |
-| `/validate` | Run exhaustive QA and full project validation |
+| `/architecture-ade` | Architectural Changes and Big Feature Implementations |
+| `/cleanup-ade` | Clean up build artifacts and logs |
+| `/css-review-ade` | Review CSS compliance and design system usage before merging |
+| `/design-planning-ade` | Design and Planning tasks (UI/UX, System Design) |
+| `/docs-path-integrity-ade` | How to maintain path integrity and avoid absolute paths in documentation |
+| `/security-review-ade` | Perform a basic security review of the project |
+| `/ux-review-ade` | Perform a UX and Accessibility Review of the application |
+| `/validate-ade` | Run exhaustive QA and full project validation |
 <!-- WORKFLOWS_END -->
 
 ## Automatic Updates

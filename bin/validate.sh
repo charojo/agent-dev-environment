@@ -121,6 +121,7 @@ ${YELLOW}Tiers:${NC} (mutually exclusive)
 ${YELLOW}Options:${NC}
   --live         Include \$ tests (Gemini API calls)
   --e2e-only     Run ONLY E2E tests
+  --skip-e2e     Skip E2E tests (useful for full validation)
   --no-fix       Skip auto-formatting
   --parallel     Parallelize tests (auto in exhaustive)
   --configure    Run interactive configuration wizard
@@ -168,6 +169,7 @@ for arg in "$@"; do
         --no-fix) SKIP_FIX=true ;;
         --parallel) PARALLEL=true ;;
         --verbose|-v) VERBOSE=true ;;
+        --skip-e2e) SKIP_E2E_FLAG=true ;;  # Explicitly disable E2E
         *) echo -e "${RED}Unknown option: $arg${NC}"; show_help; exit 1 ;;
     esac
 done
@@ -209,6 +211,11 @@ case "$TIER" in
         ;;
 esac
 
+# Override E2E if explicitly skipped
+if [ "$SKIP_E2E_FLAG" = true ]; then
+    INCLUDE_E2E=false
+fi
+
 # ============================================
 # Setup
 # ============================================
@@ -218,9 +225,11 @@ esac
 # ============================================
 mkdir -p logs
 # Preserve .testmondata if it exists
-find logs/ -maxdepth 1 -type f ! -name ".testmondata" -delete
+# Preserve .testmondata and .coverage if they exist
+find logs/ -maxdepth 1 -type f ! -name ".testmondata" ! -name ".coverage" ! -name ".gitkeep" -delete
 LOG_FILE="logs/validation_summary_log.md"
 export TESTMON_DATAFILE="logs/.testmondata"
+export COVERAGE_FILE="logs/.coverage"
 
 # Timing
 TOTAL_START=$(date +%s)
@@ -228,6 +237,7 @@ FIX_DURATION=0
 BACKEND_DURATION=0
 FRONTEND_DURATION=0
 E2E_DURATION=0
+STATIC_DURATION=0
 
 # Results
 BACKEND_PASSED=0
@@ -241,7 +251,7 @@ E2E_FAILED=0
 
 # Check for initial run or clean environment BEFORE tier specific logic
 INITIAL_CLEAN=false
-if [[ ! -f "$TESTMON_DATAFILE" ]] || [[ ! -f ".coverage" ]]; then
+if [[ ! -f "$TESTMON_DATAFILE" ]] || [[ ! -f "$COVERAGE_FILE" ]]; then
     INITIAL_CLEAN=true
 fi
 
@@ -417,8 +427,11 @@ run_backend_tests() {
     echo "Command: uv run pytest $pytest_args" >> "$LOG_FILE"
     echo "----------------------------------------" >> "$LOG_FILE"
     
-    # We use eval to handle markers correctly in the variable
-    eval "uv run pytest $pytest_args 2>&1" | tee "$output_tmp" | strip_ansi >> "$LOG_FILE"
+    # Execute: Raw -> Console (via tee), Raw -> Temp File
+    eval "uv run pytest $pytest_args 2>&1" | tee "$output_tmp"
+    
+    # Append Stripped -> Log File
+    cat "$output_tmp" | strip_ansi >> "$LOG_FILE"
     
     echo "----------------------------------------" >> "$LOG_FILE"
     echo "\`\`\`" >> "$LOG_FILE"
@@ -501,6 +514,9 @@ run_frontend_tests() {
             echo "Selection: All tests"
             if [ "$TIER" = "full" ] || [ "$TIER" = "exhaustive" ]; then
                 vitest_args="--coverage"
+            # Attempt to ensure coverage runs if we are full but skipping E2E
+            elif [ "$TIER" = "full" ] && [ "$INCLUDE_E2E" = false ]; then
+                 vitest_args="--coverage"
             fi
             ;;
     esac
@@ -511,8 +527,11 @@ run_frontend_tests() {
     
     echo "\`\`\`bash" >> "../../$LOG_FILE"
     
-    # Use script to maintain TTY for vitest colors/progress if possible, or just tee
-    eval "npm run test:run -- $vitest_args 2>&1" | tee "$output_tmp" | tee -a "../../$LOG_FILE"
+    # Execute: Raw -> Console (via tee), Raw -> Temp File
+    eval "npm run test:run -- $vitest_args 2>&1" | tee "$output_tmp"
+
+    # Append Stripped -> Log File
+    cat "$output_tmp" | strip_ansi >> "../../$LOG_FILE"
     
     echo "\`\`\`" >> "../../$LOG_FILE"
     
@@ -574,6 +593,61 @@ run_e2e_tests() {
 }
 
 # ============================================
+# Phase 5: Static Analysis
+# ============================================
+run_static_analysis() {
+    if [ "$TIER" = "fast" ] || [ "$E2E_ONLY" = true ]; then
+        return
+    fi
+
+    echo -e "${BLUE}=== Static Analysis & Lint Checks ===${NC}"
+    echo "## Static Analysis & Lint Checks" >> "$LOG_FILE"
+    
+    local start=$(date +%s)
+    
+    # Clear old log if exists
+    rm -f logs/static_analysis.log
+    
+    # Run all non-E2E validation tests
+    # test_static_analysis.py, test_linters.py, etc.
+    uv run pytest -q tests/validation --ignore=tests/validation/test_e2e_wrapper.py >> "$LOG_FILE" 2>&1 || true
+    
+    local end=$(date +%s)
+    STATIC_DURATION=$((end - start))
+    echo "TIMING_METRIC: Static=${STATIC_DURATION}s" >> "$LOG_FILE"
+}
+
+# ============================================
+# Phase 6: Subsystems (Matrix, Tokens, etc.)
+# ============================================
+run_subsystems() {
+    if [ "$TIER" != "full" ] && [ "$TIER" != "exhaustive" ]; then
+        return
+    fi
+
+    echo -e "${BLUE}=== Subsystems (Matrix & Tokens) ===${NC}"
+    echo "## Subsystems" >> "$LOG_FILE"
+
+    # 1. Coverage Matrix
+    if [ "$PYTHON_ENABLED" = "true" ] || [ "$JS_ENABLED" = "true" ]; then
+        log_msg "Generating Coverage Matrix..."
+        echo "### Coverage Matrix" >> "$LOG_FILE"
+        echo "\`\`\`" >> "$LOG_FILE"
+        node agent_env/bin/ADE_unified_matrix.js 2>&1 | strip_ansi >> "$LOG_FILE" || true
+        echo "\`\`\`" >> "$LOG_FILE"
+    fi
+
+    # 2. Token Analysis
+    if [ -f "logs/token_ledger.csv" ]; then
+        log_msg "Analyzing Token Usage..."
+        echo "### Token Analysis" >> "$LOG_FILE"
+        echo "\`\`\`" >> "$LOG_FILE"
+        uv run python agent_env/bin/ADE_analyze_tokens.py 2>&1 | strip_ansi >> "$LOG_FILE" || true
+        echo "\`\`\`" >> "$LOG_FILE"
+    fi
+}
+
+# ============================================
 # Summary
 # ============================================
 print_summary() {
@@ -623,6 +697,7 @@ print_summary() {
     fi
 
     # Record Total Time for analyze.sh
+    echo "TIMING_METRIC: Static=${STATIC_DURATION}s" >> "$LOG_FILE"
     echo "TIMING_METRIC: Total=${total_duration}s" >> "$LOG_FILE"
 
     # Run Analysis (LOC metrics, coverage summary, etc.)
@@ -636,7 +711,9 @@ print_summary() {
         ANALYZE_SCRIPT="./.agent/bin/ADE_analyze.sh"
     fi
 
-    $ANALYZE_SCRIPT "$LOG_FILE" | strip_ansi >> "$LOG_FILE" || true
+    # Show analysis in shell AND log
+    # Show analysis: stdout (Markdown) -> Log File, stderr (ASCII) -> Console
+    $ANALYZE_SCRIPT "$LOG_FILE" >> "$LOG_FILE"
 
     # Overall status
     local overall_failed=$((${BACKEND_FAILED:-0} + ${FRONTEND_FAILED:-0} + ${E2E_FAILED:-0}))
@@ -650,10 +727,12 @@ print_summary() {
 # ============================================
 # Main Execution
 # ============================================
-run_auto_fix
-run_backend_tests
-run_frontend_tests
-run_e2e_tests
+run_auto_fix || echo -e "${RED}Auto-fix encountered issues${NC}"
+run_backend_tests || echo -e "${RED}Backend tests failed${NC}"
+run_frontend_tests || echo -e "${RED}Frontend tests failed${NC}"
+run_e2e_tests || echo -e "${RED}E2E tests failed${NC}"
+run_static_analysis || echo -e "${RED}Static analysis failed${NC}"
+run_subsystems || echo -e "${RED}Subsystems failed${NC}"
 
 if [ "$RUN_CONFIG_TESTS" = true ]; then
     echo -e "${BLUE}=== Configuration Tests ===${NC}"

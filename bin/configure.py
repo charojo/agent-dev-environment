@@ -87,7 +87,6 @@ def toggle_config_in_file(root_dir, key_path, value):
     # Auto-init if missing
     if not config_path.exists():
         load_config(root_dir)  # Triggers template copy
-        is_template_init = True
 
     if not config_path.exists():
         return
@@ -181,8 +180,11 @@ def wizard(root_dir):
     # 3. Shell Config
     configure_shell_env(root_dir)
 
+    # 4. Workflows
+    ensure_ade_workflows(root_dir)
+
     # Mark setup as complete
-    (agent_env_dir / ".agent_setup_complete").touch()
+    (root_dir / ".agent_setup_complete").touch()
     print("\n✅  Configuration complete!\n")
 
 
@@ -190,7 +192,8 @@ def get_installed_extras(root_dir):
     """
     Returns a set of currently installed extra names.
     This is best-effort. We can parse 'uv pip freeze' or checking .venv/pyvenv.cfg?
-    Actually, uv doesn't explicitly store 'installed extras' metadata easily accessible without parsing.
+    Actually, uv doesn't explicitly store 'installed extras' metadata easily
+    accessible without parsing.
     Faster way: Check if the marker-dependent packages are present?
     Or: We store the last applied extras in a file .agent_last_extras
     """
@@ -277,6 +280,7 @@ def main():
     if should_run_wizard:
         wizard(root_dir)
         ensure_docs_gen_ignored(root_dir)
+        ensure_ade_workflows(root_dir)
         sys.exit(0)
 
     if not is_quiet:
@@ -298,6 +302,7 @@ def main():
 
     # Always ensure docs/gen is ignored whenever configuration is updated
     ensure_docs_gen_ignored(root_dir)
+    ensure_ade_workflows(root_dir)
 
     if args.check_diff:
         removed = check_diff(root_dir)
@@ -367,26 +372,66 @@ def configure_shell_env(root_dir):
         print(f"Error writing to {rc_file}: {e}")
 
 
+def ensure_ade_workflows(root_dir):
+    """
+    Links ADE workflows to .agent/workflows with an 'ade-' prefix.
+    """
+    project_root = root_dir.parent
+    agent_workflows_dir = project_root / ".agent" / "workflows"
+    source_workflows_dir = root_dir / "workflows"
+
+    if not source_workflows_dir.exists():
+        return
+
+    if not agent_workflows_dir.exists():
+        print(f"Creating {agent_workflows_dir}...")
+        agent_workflows_dir.mkdir(parents=True, exist_ok=True)
+
+    for workflow_file in source_workflows_dir.glob("*.md"):
+        target_name = workflow_file.name
+        target_path = agent_workflows_dir / target_name
+
+        # Relative link
+        # From .agent/workflows/xxx-ade.md to ../../agent_env/workflows/xxx-ade.md
+        rel_source = os.path.relpath(workflow_file, agent_workflows_dir)
+
+        if target_path.exists() or target_path.is_symlink():
+            if target_path.is_symlink() and os.readlink(target_path) == rel_source:
+                continue
+            target_path.unlink()
+
+        print(f"Linking {target_name} -> {workflow_file.name}")
+        target_path.symlink_to(rel_source)
+
+
 def ensure_docs_gen_ignored(root_dir):
     """
     Ensures that the docs/gen directory is present in the project's .gitignore.
     """
     project_root = root_dir.parent
+    agent_dir_entry = ".agent/\n"
     gitignore_path = project_root / ".gitignore"
-    
+
     ignore_entry = "docs/gen/\n"
-    
+
     if gitignore_path.exists():
         content = gitignore_path.read_text()
+        needs_write = False
         if "docs/gen/" not in content:
-            print("Adding docs/gen/ to .gitignore...")
-            with open(gitignore_path, "a") as f:
-                if not content.endswith("\n"):
-                    f.write("\n")
-                f.write(f"# Automated Doc Generation\n{ignore_entry}")
+            content += f"\n# Automated Doc Generation\n{ignore_entry}"
+            needs_write = True
+        if ".agent/" not in content:
+            content += f"\n# Agent Metadata\n{agent_dir_entry}"
+            needs_write = True
+
+        if needs_write:
+            print("Updating .gitignore...")
+            gitignore_path.write_text(content)
     else:
-        print("Creating .gitignore with docs/gen/...")
-        gitignore_path.write_text(f"# Automated Doc Generation\n{ignore_entry}")
+        print("Creating .gitignore...")
+        gitignore_path.write_text(
+            f"# Automated Doc Generation\n{ignore_entry}\n# Agent Metadata\n{agent_dir_entry}"
+        )
 
 
 if __name__ == "__main__":

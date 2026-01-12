@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ADE_config_utils import load_config, get_value
+from ADE_config_utils import get_value, load_config
 
 # Configuration
 # Default to current directory script is in -> parent -> parent (assuming bin/ADE_document.py)
@@ -200,7 +200,8 @@ def write_design_spec(docs, output_file, project_name):
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(f"# Automated Design Specification: {project_name}\n\n")
         f.write(
-            "> **Note**: This document is auto-generated from `## @DOC` blocks in the source code. \n\n"
+            "> **Note**: This document is auto-generated from "
+            "`## @DOC` blocks in the source code. \n\n"
         )
 
         for filename, content in sorted(docs.items()):
@@ -260,7 +261,7 @@ def fix_doxygen_links(html_dir):
         return
 
     print(f"Post-processing links in {index_file.name}...")
-    
+
     with open(index_file, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -269,22 +270,22 @@ def fix_doxygen_links(html_dir):
     def translate_md_link(match):
         rel_path = match.group(1)
         anchor = match.group(2) or ""
-        
+
         # Doxygen's naming convention for Markdown pages:
         # md_<path_with_underscores_replacing_slashes_and_dashes_and_dots>
         # Except the final .html
-        
+
         normalized = rel_path.replace("/", "_").replace("-", "_").replace(".", "_")
         # Ensure we don't have double underscores if they were already there
         while "__" in normalized:
             normalized = normalized.replace("__", "_")
-            
+
         new_href = f"md_{normalized}.html{anchor}"
-        
+
         # Check if the file actually exists before replacing
         if (html_dir / new_href.split("#")[0]).exists():
             return f'href="{new_href}"'
-        
+
         return match.group(0)
 
     # Simplified regex for cross-references in the same Doxygen project
@@ -321,7 +322,8 @@ def generate_doxygen(project_path, output_dir, project_name, extra_inputs=None):
                 pass
             input_paths.append(p_val)
 
-    # Link Normalization: Doxygen 1.9.1 struggles with cross-links in tables if prefixed with 'docs/'
+    # Link Normalization: Doxygen 1.9.1 struggles with cross-links in tables
+    # if prefixed with 'docs/'
     # We'll create a normalized copy of input files if they are in the root
     inputs_str = " ".join([f'"{p}"' for p in input_paths])
 
@@ -356,10 +358,12 @@ def generate_doxygen(project_path, output_dir, project_name, extra_inputs=None):
     DIRECTORY_GRAPH        = YES
     
     # Image Paths for Markdown
-    IMAGE_PATH             = "{DOCS_DIR}" "{DOCS_DIR}/assets/diagrams" "{DOCS_DIR}/assets/images" "{GEN_IMAGES_DIR}"
+    IMAGE_PATH             = "{DOCS_DIR}" "{DOCS_DIR}/assets/diagrams" \
+                             "{DOCS_DIR}/assets/images" "{GEN_IMAGES_DIR}"
     
     # Exclusions to reduce size
-    EXCLUDE_PATTERNS       = **/node_modules/* **/venv/* **/.tox/* **/.venv/* **/logs/* **/dist/* **/build/*
+    EXCLUDE_PATTERNS       = **/node_modules/* **/venv/* **/.tox/* \
+                             **/.venv/* **/logs/* **/dist/* **/build/*
     EXCLUDE                = {doxy_output} {output_dir.parent}/gen
     STRIP_FROM_PATH        = "{project_path.parent}" "{project_path}"
     """
@@ -370,18 +374,22 @@ def generate_doxygen(project_path, output_dir, project_name, extra_inputs=None):
 
     try:
         subprocess.run(["doxygen", str(doxyfile_path)], check=True, cwd=doxy_output)
-        
+
         # Post-process: Mirror assets to ensure relative links work
         # 1. Mirror 'docs/assets' to doxy_output (one level up from html) for ../assets links
         # 2. Mirror 'docs/assets' to doxy_output/html/docs/assets for docs/assets links
-        assets_src = project_path.parent / "docs" / "assets" if (project_path.parent / "docs" / "assets").exists() else project_path / "docs" / "assets"
+        assets_src = (
+            project_path.parent / "docs" / "assets"
+            if (project_path.parent / "docs" / "assets").exists()
+            else project_path / "docs" / "assets"
+        )
         if assets_src.exists():
             # For ../assets/
             assets_dest_root = doxy_output / "assets"
             if assets_dest_root.exists():
                 shutil.rmtree(assets_dest_root)
             shutil.copytree(assets_src, assets_dest_root)
-            
+
             # For docs/assets/ (from index.html)
             assets_dest_html = doxy_output / "html" / "docs" / "assets"
             assets_dest_html.parent.mkdir(parents=True, exist_ok=True)
@@ -560,7 +568,7 @@ def process_project(
     # 2. Write Design Spec
     prefix = f"{project_name}_"
     spec_file = output_dir / f"{prefix}DESIGN_SPEC.md"
-    
+
     # We only write the spec if there is content
     if docs:
         write_design_spec(docs, spec_file, project_name)
@@ -642,7 +650,8 @@ def generate_structure_map(project_path, output_file, docs):
             node_id = get_node_id(current_path)
             if node_id not in nodes:
                 dot_content.append(
-                    f'  {node_id} [label="{current_path.name}/", shape=folder, fillcolor="#E3F2FD"];'
+                    f'  {node_id} [label="{current_path.name}/", '
+                    'shape=folder, fillcolor="#E3F2FD"];'
                 )
                 nodes.add(node_id)
 
@@ -680,7 +689,8 @@ def generate_structure_map(project_path, output_file, docs):
                 fillcolor = "#ECEFF1"  # Grey tint
 
             dot_content.append(
-                f'  {node_id} [label="{file}{label_suffix}", fillcolor="{fillcolor}", tooltip="{tooltip}"];'
+                f'  {node_id} [label="{file}{label_suffix}", '
+                f'fillcolor="{fillcolor}", tooltip="{tooltip}"];'
             )
 
             # Edge from folder to file
@@ -729,9 +739,17 @@ def ensure_docs_server_running(root_dir):
     try:
         # Launch as a detached process
         if os.name == "nt":
-            subprocess.Popen([sys.executable, str(script_path)], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+            subprocess.Popen(
+                [sys.executable, str(script_path)],
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            )
         else:
-            subprocess.Popen([sys.executable, str(script_path)], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(
+                [sys.executable, str(script_path)],
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
     except Exception as e:
         print(f"Warning ⚠️ : Failed to start doc server automatically. {e}")
 
@@ -766,7 +784,8 @@ def main():
     print("\n--- Generating Diagrams ---")
     try:
         import ADE_generate_diagrams
-        ADE_generate_diagrams.main()
+
+        ADE_generate_diagrams.main([])
     except ImportError:
         print("Warning ⚠️ : 'ADE_generate_diagrams' not found. Skipping diagram generation.")
     except Exception as e:
@@ -781,17 +800,20 @@ def main():
     config = load_config(DEFAULT_PROJECT_ROOT)
     proj_name = get_value(config, "project.name") or "Project"
     api_docs_enabled = get_value(config, "features.api_docs.enabled")
-    if api_docs_enabled is None: api_docs_enabled = True # Default to True if doc feature is enabled
+    if api_docs_enabled is None:
+        api_docs_enabled = True  # Default to True if doc feature is enabled
 
     # Process local project (agent)
     # Process only major components to reduce bloat
     print("\n--- Consolidating Documentation ---")
-    
+
     # 1. Main Project (consolidated Engine + docs)
     if is_submodule and superproject_root:
         # Instead of scanning all siblings, we focus on 'src' and 'docs' being together
-        process_project(superproject_root, GEN_DOCS_DIR, proj_name, args.pdf, skip_doxygen=not api_docs_enabled)
-    
+        process_project(
+            superproject_root, GEN_DOCS_DIR, proj_name, args.pdf, skip_doxygen=not api_docs_enabled
+        )
+
     update_diagram_links(project_root)
 
     # Automatically serve if requested or integrated

@@ -107,6 +107,6 @@ def analyze_ledger(ledger_path):
 
 
 if __name__ == "__main__":
-    base_dir = Path(__file__).parent.parent
+    base_dir = Path(__file__).parent.parent.parent
     ledger = base_dir / "logs" / "token_ledger.csv"
     analyze_ledger(ledger)

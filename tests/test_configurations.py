@@ -178,7 +178,8 @@ def main():
     print("|" + "-" * 22 + "|" + "-" * 8 + "|" + "-" * 12 + "|" + "-" * 12 + "|" + "-" * 12 + "|")
     for r in report:
         print(
-            f"| {r['config']:<20} | {r['status']:<6} | {r['total_size']:<10} | {r['venv_size']:<10} | {r['node_modules_size']:<10} |"
+            f"| {r['config']:<20} | {r['status']:<6} | {r['total_size']:<10} | "
+            f"{r['venv_size']:<10} | {r['node_modules_size']:<10} |"
         )
 
 

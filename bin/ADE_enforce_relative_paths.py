@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 # Project root relative to this script
-PROJECT_ROOT = Path(__file__).parent.parent.absolute()
+PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
 
 # Patterns that indicate absolute project paths
 # We look for the common patterns that appeared: /home/chacker/projects/papeterie-engine
@@ -83,6 +83,9 @@ def main():
 
     for rel_path_str in files_to_check:
         file_path = root_dir / rel_path_str
+
+        if file_path.is_dir():
+            continue
 
         # Skip this script itself
         if file_path.name in ["enforce_relative_paths.py", "ADE_enforce_relative_paths.py"]:
