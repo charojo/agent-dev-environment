@@ -19,7 +19,7 @@ import sys
 # Ensure we can import config_utils from the same directory
 sys.path.append(str(Path(__file__).parent))
 try:
-    import config_utils
+    import ADE_config_utils as config_utils
 except ImportError:
     # If running from a different context, try to find it
     pass

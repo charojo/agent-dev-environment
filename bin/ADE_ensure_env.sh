@@ -35,8 +35,9 @@ if [ ! -d ".venv" ]; then
     echo -e "${YELLOW}.venv not found. Initializing Python environment...${NC}"
     
     EXTRAS=""
-    if [ -f "bin/config_utils.py" ]; then
-        RAW_EXTRAS=$(uv run python bin/config_utils.py get-extras)
+    EXTRAS=""
+    if [ -f "$SCRIPT_DIR/ADE_config_utils.py" ]; then
+        RAW_EXTRAS=$(uv run python "$SCRIPT_DIR/ADE_config_utils.py" get-extras)
         for extra in $RAW_EXTRAS; do
              EXTRAS="$EXTRAS --extra $extra"
         done
@@ -54,9 +55,9 @@ else
     
     EXTRAS=""
     
-    if [ -f "bin/config_utils.py" ]; then
+    if [ -f "$SCRIPT_DIR/ADE_config_utils.py" ]; then
         # Get space-separated list of extras: e.g. "processing renderer"
-        RAW_EXTRAS=$(uv run python bin/config_utils.py get-extras)
+        RAW_EXTRAS=$(uv run python "$SCRIPT_DIR/ADE_config_utils.py" get-extras)
         for extra in $RAW_EXTRAS; do
              EXTRAS="$EXTRAS --extra $extra"
         done
@@ -97,7 +98,7 @@ else
 fi
 
 # 2. Check Web environment (node/npm) - OPTIONAL but recommended for TS/JS
-JS_SUPPORT_ENABLED=$(uv run python bin/config_utils.py get languages.typescript.enabled)
+JS_SUPPORT_ENABLED=$(uv run python "$SCRIPT_DIR/ADE_config_utils.py" get languages.typescript.enabled)
 if [[ "$JS_SUPPORT_ENABLED" == "true" ]]; then
     if [ -d "src/web" ] || [ -f "package.json" ]; then
         echo -e "${BLUE}Checking Web environment (Node.js/npm)...${NC}"
@@ -157,8 +158,9 @@ fi
 
 # 5. Check for Advanced Documentation Tools (Doxygen, Graphviz)
 DOCS_ENABLED="false"
-if [ -f "bin/config_utils.py" ]; then
-    DOCS_ENABLED=$(uv run python bin/config_utils.py get features.documentation.enabled)
+DOCS_ENABLED="false"
+if [ -f "$SCRIPT_DIR/ADE_config_utils.py" ]; then
+    DOCS_ENABLED=$(uv run python "$SCRIPT_DIR/ADE_config_utils.py" get features.documentation.enabled)
 fi
 
 if [ "$DOCS_ENABLED" == "true" ]; then

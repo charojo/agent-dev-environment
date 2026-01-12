@@ -85,7 +85,7 @@ def main():
         file_path = root_dir / rel_path_str
 
         # Skip this script itself
-        if file_path.name == "enforce_relative_paths.py":
+        if file_path.name in ["enforce_relative_paths.py", "ADE_enforce_relative_paths.py"]:
             continue
 
         if is_binary(file_path):

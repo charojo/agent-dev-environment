@@ -14,17 +14,30 @@
 
 set -eo pipefail
 
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+
 # Store the project root directory
 if [ -d "agent_env" ]; then
     ROOT_DIR="$(pwd)"
+    AGENT_DIR="agent_env"
 elif [ -d ".agent" ]; then
     ROOT_DIR="$(pwd)"
+    AGENT_DIR=".agent"
 elif [[ "$(basename "$(dirname "$0")")" == "bin" ]]; then
     ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+    # Try to deduce AGENT_DIR
+    if [ -d "$ROOT_DIR/agent_env" ]; then
+        AGENT_DIR="agent_env"
+    elif [ -d "$ROOT_DIR/.agent" ]; then
+        AGENT_DIR=".agent"
+    fi
 else
     ROOT_DIR="$(pwd)"
 fi
 cd "$ROOT_DIR"
+
 
 # Ensure Environment
 # Check for First Run or explicit configuration
@@ -37,12 +50,14 @@ if [[ "$1" != "--help" && "$1" != "-h" ]]; then
     fi
 fi
 
-if [ -f "./agent_env/bin/ensure_env.sh" ]; then
-    ./agent_env/bin/ensure_env.sh
-elif [ -f "./.agent/bin/ensure_env.sh" ]; then
-    ./.agent/bin/ensure_env.sh
+if [ -f "./agent_env/bin/ADE_ensure_env.sh" ]; then
+    ./agent_env/bin/ADE_ensure_env.sh
+elif [ -f "./.agent/bin/ADE_ensure_env.sh" ]; then
+    ./.agent/bin/ADE_ensure_env.sh
 else
-    ./bin/ensure_env.sh
+    # Fallback or error if not found
+    echo "Error: ADE_ensure_env.sh not found."
+    exit 1
 fi
 
 # ============================================
@@ -250,12 +265,21 @@ log_msg ""
 # Centralized Test Selection Logic
 # Load Configuration via config_utils.py
 ENABLED_MARKERS=""
-if [ -f "bin/config_utils.py" ]; then
+CONFIG_UTILS=""
+if [ -f "agent_env/bin/ADE_config_utils.py" ]; then
+    CONFIG_UTILS="agent_env/bin/ADE_config_utils.py"
+elif [ -f ".agent/bin/ADE_config_utils.py" ]; then
+    CONFIG_UTILS=".agent/bin/ADE_config_utils.py"
+fi
+
+# Load Configuration via ADE_config_utils.py
+ENABLED_MARKERS=""
+if [ -n "$CONFIG_UTILS" ]; then
     # We use python to get the marker string e.g. -m "not processing"
-    ENABLED_MARKERS=$(uv run python bin/config_utils.py get-markers)
+    ENABLED_MARKERS=$(uv run python "$CONFIG_UTILS" get-markers)
     # Also check if python is enabled? If python is disabled, we shouldn't run backend tests at all.
-    PYTHON_ENABLED=$(uv run python bin/config_utils.py get languages.python.enabled)
-    JS_ENABLED=$(uv run python bin/config_utils.py get languages.typescript.enabled)
+    PYTHON_ENABLED=$(uv run python "$CONFIG_UTILS" get languages.python.enabled)
+    JS_ENABLED=$(uv run python "$CONFIG_UTILS" get languages.typescript.enabled)
 fi
 
 # Fallback if config_utils missing or returns empty (assume enabled)
@@ -605,11 +629,11 @@ print_summary() {
     log_msg ""
     echo "Running Validation Analysis..."
     
-    local ANALYZE_SCRIPT="./bin/analyze.sh"
-    if [ -f "./agent_env/bin/analyze.sh" ]; then
-        ANALYZE_SCRIPT="./agent_env/bin/analyze.sh"
-    elif [ -f "./.agent/bin/analyze.sh" ]; then
-        ANALYZE_SCRIPT="./.agent/bin/analyze.sh"
+    local ANALYZE_SCRIPT=""
+    if [ -f "./agent_env/bin/ADE_analyze.sh" ]; then
+        ANALYZE_SCRIPT="./agent_env/bin/ADE_analyze.sh"
+    elif [ -f "./.agent/bin/ADE_analyze.sh" ]; then
+        ANALYZE_SCRIPT="./.agent/bin/ADE_analyze.sh"
     fi
 
     $ANALYZE_SCRIPT "$LOG_FILE" | strip_ansi >> "$LOG_FILE" || true
