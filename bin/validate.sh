@@ -74,6 +74,7 @@ INITIALIZING=false   # Internal flag for missing coverage
 REFRESHING=false     # Internal flag for outdated coverage
 PYTEST_SELECTION=""  # Centralized selection args
 RUN_CONFIG_TESTS=false # Run configuration validation tests
+UPDATE_SNAPSHOTS=false # Flag to update E2E snapshots
 
 # Colors
 RED=$'\033[0;31m'
@@ -122,6 +123,7 @@ ${YELLOW}Options:${NC}
   --live         Include \$ tests (Gemini API calls)
   --e2e-only     Run ONLY E2E tests
   --skip-e2e     Skip E2E tests (useful for full validation)
+  --update-snapshots Update E2E visual snapshots
   --no-fix       Skip auto-formatting
   --parallel     Parallelize tests (auto in exhaustive)
   --configure    Run interactive configuration wizard
@@ -170,6 +172,7 @@ for arg in "$@"; do
         --parallel) PARALLEL=true ;;
         --verbose|-v) VERBOSE=true ;;
         --skip-e2e) SKIP_E2E_FLAG=true ;;  # Explicitly disable E2E
+        --update-snapshots) UPDATE_SNAPSHOTS=true ;;
         *) echo -e "${RED}Unknown option: $arg${NC}"; show_help; exit 1 ;;
     esac
 done
@@ -299,15 +302,15 @@ if [ -z "$JS_ENABLED" ]; then JS_ENABLED="true"; fi
 
 if [[ "$TIER" == "fast" || "$TIER" == "medium" ]]; then
     if [[ ! -f "$TESTMON_DATAFILE" ]]; then
-        log_msg "${YELLOW}Initial run detected: Building testmon coverage database...${NC}"
-        log_msg "${BLUE}Note: This initial scan may take 1-3 minutes depending on your environment.${NC}"
+        log_msg "${YELLOW}🚀 Initializing Test Ecosystem... Building testmon database...${NC}"
+        log_msg "${BLUE}Note: This initial scan maps your codebase to tests. It may take 1-3 minutes but speeds up future runs dramatically!${NC}"
         INITIALIZING=true
         PYTEST_SELECTION="--testmon"
     else
         # Check if tests are newer than data
         test_changes=$(find tests/ -name "*.py" -newer "$TESTMON_DATAFILE" 2>/dev/null | wc -l)
         if [[ "$test_changes" -gt 0 ]]; then
-            log_msg "${YELLOW}New test files detected, will refresh testmon...${NC}"
+            log_msg "${YELLOW}🔄 New test files detected: Refreshing testmon database...${NC}"
             REFRESHING=true
             PYTEST_SELECTION="--testmon"
         else
@@ -429,10 +432,18 @@ run_backend_tests() {
     
     # Execute: Raw -> Console (via tee), Raw -> Temp File
     eval "uv run pytest $pytest_args 2>&1" | tee "$output_tmp"
+    local exit_code=${PIPESTATUS[0]}
     
     # Append Stripped -> Log File
     cat "$output_tmp" | strip_ansi >> "$LOG_FILE"
     
+    # Explicitly append coverage report if we ran coverage
+    if [[ "$TIER" == "full" || "$TIER" == "exhaustive" ]] && [[ -f "$COVERAGE_FILE" ]]; then
+        echo "" >> "$LOG_FILE"
+        echo "Explicit Coverage Report:" >> "$LOG_FILE"
+        uv run coverage report --data-file="$COVERAGE_FILE" | strip_ansi >> "$LOG_FILE"
+    fi
+
     echo "----------------------------------------" >> "$LOG_FILE"
     echo "\`\`\`" >> "$LOG_FILE"
     log_msg "Backend unit tests completed."
@@ -459,6 +470,8 @@ run_backend_tests() {
     local end=$(date +%s)
     BACKEND_DURATION=$((end - start))
     echo "TIMING_METRIC: Backend=${BACKEND_DURATION}s" >> "$LOG_FILE"
+
+    return $exit_code
 }
 
 # ============================================
@@ -529,6 +542,7 @@ run_frontend_tests() {
     
     # Execute: Raw -> Console (via tee), Raw -> Temp File
     eval "npm run test:run -- $vitest_args 2>&1" | tee "$output_tmp"
+    local exit_code=${PIPESTATUS[0]}
 
     # Append Stripped -> Log File
     cat "$output_tmp" | strip_ansi >> "../../$LOG_FILE"
@@ -548,12 +562,20 @@ run_frontend_tests() {
     local end=$(date +%s)
     FRONTEND_DURATION=$((end - start))
     echo "TIMING_METRIC: Frontend=${FRONTEND_DURATION}s" >> "$LOG_FILE"
+
+    return $exit_code
 }
 
 # ============================================
 # Phase 4: E2E Tests
 # ============================================
 run_e2e_tests() {
+    if [ "$UPDATE_SNAPSHOTS" = true ]; then
+        export UPDATE_SNAPSHOTS=true
+        INCLUDE_E2E=true
+        log_msg "${YELLOW}Snapshot update mode enabled.${NC}"
+    fi
+
     if [ "$INCLUDE_E2E" = false ] && [ "$E2E_ONLY" = false ]; then
         log_msg ""
         log_msg "${YELLOW}Skipping E2E tests${NC}"
@@ -572,9 +594,19 @@ run_e2e_tests() {
     
     local start=$(date +%s)
     
+    local output_tmp="logs/e2e_output.tmp"
+    log_msg "Command: uv run pytest -s --timeout=300 tests/validation/test_e2e_wrapper.py"
+    
+    # Execute: Raw -> Console (via tee), Raw -> Temp File
+    eval "uv run pytest -s --timeout=300 tests/validation/test_e2e_wrapper.py 2>&1" | tee "$output_tmp"
+    local exit_code=${PIPESTATUS[0]}
+    
+    # Append Stripped -> Log File
+    cat "$output_tmp" | strip_ansi >> "$LOG_FILE"
+    
     local output
-    output=$(uv run pytest -s --timeout=300 tests/validation/test_e2e_wrapper.py 2>&1) || true
-    echo "$output" | strip_ansi >> "$LOG_FILE"
+    output=$(cat "$output_tmp")
+    rm -f "$output_tmp"
     
     echo "\`\`\`" >> "$LOG_FILE"
     
@@ -590,6 +622,8 @@ run_e2e_tests() {
     local end=$(date +%s)
     E2E_DURATION=$((end - start))
     echo "TIMING_METRIC: E2E=${E2E_DURATION}s" >> "$LOG_FILE"
+
+    return $exit_code
 }
 
 # ============================================
@@ -655,7 +689,6 @@ print_summary() {
     local total_duration=$((total_end - TOTAL_START))
     
     log_msg ""
-    echo -e "${BLUE}=== VALIDATION SUMMARY ===${NC}"
     echo "## Validation Summary" >> "$LOG_FILE"
     
     # Tier description
@@ -667,25 +700,6 @@ print_summary() {
         exhaustive) tier_desc="Exhaustive (max coverage)" ;;
     esac
     echo "- **Tier**: $tier_desc" >> "$LOG_FILE"
-    
-    # Status indicators
-    local backend_status="${GREEN}✓${NC}"
-    if [ "${BACKEND_FAILED:-0}" -gt 0 ]; then backend_status="${RED}✗${NC}"; fi
-    
-    local frontend_status="${GREEN}✓${NC}"
-    if [ "${FRONTEND_FAILED:-0}" -gt 0 ]; then frontend_status="${RED}✗${NC}"; fi
-    
-    local e2e_status="${GREEN}✓${NC}"
-    if [ "${E2E_FAILED:-0}" -gt 0 ]; then e2e_status="${RED}✗${NC}"; fi
-    
-    # Simple console output
-    if [ "$E2E_ONLY" = false ]; then
-        echo -e "Backend:     $backend_status ${BACKEND_PASSED:-0} passed"
-        echo -e "Frontend:    $frontend_status ${FRONTEND_PASSED:-0} passed"
-    fi
-    if [ "$INCLUDE_E2E" = true ]; then
-        echo -e "E2E:         $e2e_status ${E2E_PASSED:-0} passed"
-    fi
 
     # Append detailed logs from wrappers so analyze.sh can find them
     if [ -f "logs/static_analysis.log" ]; then
@@ -715,6 +729,11 @@ print_summary() {
     # Show analysis: stdout (Markdown) -> Log File, stderr (ASCII) -> Console
     $ANALYZE_SCRIPT "$LOG_FILE" >> "$LOG_FILE"
 
+    # Run Failure Analysis
+    if [ -f "./agent_env/bin/ADE_analyze_failures.py" ]; then
+        uv run python ./agent_env/bin/ADE_analyze_failures.py "$LOG_FILE" >> "$LOG_FILE"
+    fi
+
     # Overall status
     local overall_failed=$((${BACKEND_FAILED:-0} + ${FRONTEND_FAILED:-0} + ${E2E_FAILED:-0}))
     if [ "$overall_failed" -eq 0 ]; then
@@ -727,12 +746,12 @@ print_summary() {
 # ============================================
 # Main Execution
 # ============================================
-run_auto_fix || echo -e "${RED}Auto-fix encountered issues${NC}"
-run_backend_tests || echo -e "${RED}Backend tests failed${NC}"
-run_frontend_tests || echo -e "${RED}Frontend tests failed${NC}"
-run_e2e_tests || echo -e "${RED}E2E tests failed${NC}"
-run_static_analysis || echo -e "${RED}Static analysis failed${NC}"
-run_subsystems || echo -e "${RED}Subsystems failed${NC}"
+run_auto_fix || { echo -e "${RED}Auto-fix encountered issues${NC}"; exit 1; }
+run_backend_tests || { echo -e "${RED}Backend tests failed${NC}"; exit 1; }
+run_frontend_tests || { echo -e "${RED}Frontend tests failed${NC}"; exit 1; }
+run_e2e_tests || { echo -e "${RED}E2E tests failed${NC}"; exit 1; }
+run_static_analysis || { echo -e "${RED}Static analysis failed${NC}"; exit 1; }
+run_subsystems || { echo -e "${RED}Subsystems failed${NC}"; exit 1; }
 
 if [ "$RUN_CONFIG_TESTS" = true ]; then
     echo -e "${BLUE}=== Configuration Tests ===${NC}"

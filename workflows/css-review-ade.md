@@ -18,6 +18,15 @@ grep -rE "#[0-9a-fA-F]{3,6}" src/web/src/components/*.jsx --include="*.jsx" | gr
 
 **Expected**: All colors should use `var(--color-*)` CSS variables from `index.css`.
 
+## 2. Verify with Safe CSS
+
+After fixing any compliance issues, run the Safe CSS workflow to ensure no visual regressions were introduced:
+
+// turbo
+```bash
+./agent_env/bin/ADE_safe_css.sh
+```
+
 ## 2. Audit Inline Style Usage
 
 Count components with excessive inline styles:

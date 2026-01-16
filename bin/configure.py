@@ -59,7 +59,7 @@ def load_config(root_dir):
         template_path = root_dir / "config/templates/config.toml"
         if template_path.exists():
             print(f"✨ Initializing {config_path} from template...")
-            shutil.copy2(template_path, config_path)
+            copy_if_changed(template_path, config_path)
         else:
             return {}
 
@@ -73,6 +73,24 @@ def save_lines(root_dir, lines):
         f.writelines(lines)
 
 
+def copy_if_changed(src, dst):
+    """
+    Copies src to dst only if dst does not exist or content differs.
+    Returns True if copied, False otherwise.
+    """
+    if not os.path.exists(dst):
+        shutil.copy2(src, dst)
+        return True
+
+    # Compare content
+    with open(src, "rb") as f1, open(dst, "rb") as f2:
+        if f1.read() == f2.read():
+            return False
+
+    shutil.copy2(src, dst)
+    return True
+
+
 def toggle_config_in_file(root_dir, key_path, value):
     """
     Naive regex-based toggler to preserve comments.
@@ -80,7 +98,6 @@ def toggle_config_in_file(root_dir, key_path, value):
     This is fragile but suffices for this controlled environment.
     key_path: languages.python.enabled
     """
-    is_template_init = False
 
     config_path = get_config_path(root_dir)
 
@@ -155,6 +172,8 @@ def wizard(root_dir):
         print(f"LANGUAGE: {lang} (Currently: {'Enabled' if enabled else 'Disabled'})")
         if desc:
             print(f"  Description: {desc}")
+        if lang == "typescript":
+            print("  Note: Enabling TypeScript supports hybrid projects (JS + TS).")
         choice = input(f"  Enable {lang}? [Y/n]: ").strip().lower()
         if choice == "" or choice == "y":
             toggle_config_in_file(root_dir, f"languages.{lang}.enabled", True)
@@ -281,6 +300,7 @@ def main():
         wizard(root_dir)
         ensure_docs_gen_ignored(root_dir)
         ensure_ade_workflows(root_dir)
+        ensure_templates_installed(root_dir)
         sys.exit(0)
 
     if not is_quiet:
@@ -303,6 +323,7 @@ def main():
     # Always ensure docs/gen is ignored whenever configuration is updated
     ensure_docs_gen_ignored(root_dir)
     ensure_ade_workflows(root_dir)
+    ensure_templates_installed(root_dir)
 
     if args.check_diff:
         removed = check_diff(root_dir)
@@ -372,6 +393,27 @@ def configure_shell_env(root_dir):
         print(f"Error writing to {rc_file}: {e}")
 
 
+def ensure_templates_installed(root_dir):
+    """
+    Copies standardized templates (REQUIREMENTS.md, ISSUES.md) to docs/ if missing.
+    """
+    project_root = root_dir.parent
+    docs_dir = project_root / "docs"
+    templates_dir = root_dir / "config" / "templates"
+
+    if not docs_dir.exists():
+        docs_dir.mkdir(parents=True, exist_ok=True)
+
+    for template_name in ["REQUIREMENTS.md", "ISSUES.md"]:
+        target_path = docs_dir / template_name
+        source_path = templates_dir / template_name
+
+        if source_path.exists() and not target_path.exists():
+            # Only install if missing. Do not overwrite existing documentation.
+            if copy_if_changed(source_path, target_path):
+                print(f"Installed {template_name} to docs/")
+
+
 def ensure_ade_workflows(root_dir):
     """
     Links ADE workflows to .agent/workflows with an 'ade-' prefix.
@@ -391,17 +433,15 @@ def ensure_ade_workflows(root_dir):
         target_name = workflow_file.name
         target_path = agent_workflows_dir / target_name
 
-        # Relative link
-        # From .agent/workflows/xxx-ade.md to ../../agent_env/workflows/xxx-ade.md
-        rel_source = os.path.relpath(workflow_file, agent_workflows_dir)
-
-        if target_path.exists() or target_path.is_symlink():
-            if target_path.is_symlink() and os.readlink(target_path) == rel_source:
-                continue
+        # We want COPIES, not symlinks, because some agents don't follow links.
+        # If it is a symlink, remove it so we can replace with a copy.
+        if target_path.is_symlink():
+            # print(f"Removing symlink {target_name} to replace with copy...")
             target_path.unlink()
 
-        print(f"Linking {target_name} -> {workflow_file.name}")
-        target_path.symlink_to(rel_source)
+        # Copy if content differs
+        if copy_if_changed(workflow_file, target_path):
+            print(f"Installed/Updated workflow {target_name}")
 
 
 def ensure_docs_gen_ignored(root_dir):

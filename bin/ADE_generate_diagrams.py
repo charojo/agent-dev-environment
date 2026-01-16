@@ -96,7 +96,8 @@ def main(argv=None):
 
         # Also run doc extraction while we are at it?
         # The user requested "generate_diagrams also updates links into the source code"
-        # It didn't explicitly ask for doc extraction here, but it's part of the same "self-documenting" workflow.
+        # It didn't explicitly ask for doc extraction here, but it's part of the same
+        # "self-documenting" workflow.
         # But let's stick to the prompt: "generate_diagrams also updates links".
         # I'll adhere to the plan which said "Integrate bin/document.py to trigger link updates".
     except ImportError:

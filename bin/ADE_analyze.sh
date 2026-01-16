@@ -27,7 +27,8 @@ strip_colors() {
 extract_backend_coverage() {
     local file="$1"
     # Use tail -1 to get the last occurrence in case of duplicates
-    grep "^TOTAL" "$file" | tail -1 | awk '{print $NF}' | sed 's/%//' | awk '{printf "%.0f", $1}' || true
+    # Coverage match: TOTAL followed by numbers and ending with % (avoids Token Analysis TOTAL)
+    grep "^TOTAL" "$file" | grep "%" | tail -1 | awk '{print $NF}' | sed 's/%//' | awk '{printf "%.0f", $1}' || true
 }
 
 # Extract frontend coverage percentage
@@ -42,26 +43,30 @@ extract_frontend_tests() {
     local file="$1"
     local line=$(grep "Tests" "$file" | grep "passed" | strip_colors | tail -1 || true)
     
-    # Extract passed
+    # Extract passed, failed, skipped
     local passed=$(echo "$line" | grep -oE "[0-9]+ passed" | head -1)
-    # Extract skipped if present
+    local failed=$(echo "$line" | grep -oE "[0-9]+ failed" | head -1)
     local skipped=$(echo "$line" | grep -oE "[0-9]+ skipped" | head -1)
 
-    if [[ -n "$skipped" ]]; then
-        echo "$passed, $skipped"
-    else
-        echo "$passed"
+    local res="$passed"
+    if [[ -n "$failed" && "$failed" != "0 failed" ]]; then
+        res="❌ $failed, $res"
     fi
+    if [[ -n "$skipped" ]]; then
+        res="$res, $skipped"
+    fi
+    echo "$res"
 }
 
 # Extract backend test summary (pytest format: "===== 134 passed, 2 skipped... =====")
 extract_backend_tests() {
     local file="$1"
     # Look for pytest summary line ONLY in the Backend Tests section
-    # Extract content between "=== Backend Tests" and "=== Frontend Tests" (or EOF)
-    # Then grep for the pytest summary line
-    sed -n '/## Backend Tests/,/## Frontend Tests/p' "$file" | strip_colors | \
-        grep -E '[0-9]+ (passed|skipped|deselected|failed|error).* in [0-9.]+s' | tail -1 || true
+    local raw_line=$(sed -n '/## Backend Tests/,/## Frontend Tests/p' "$file" | strip_colors | \
+        grep -E '[0-9]+ (passed|skipped|deselected|failed|error).* in [0-9.]+s' | tail -1 || true)
+    
+    # Clean up the line (remove == and leading/trailing whitespace)
+    echo "$raw_line" | sed 's/=//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
 }
 
 # Extract compliance checks
@@ -96,14 +101,33 @@ extract_e2e_tests() {
     # Extract just the E2E section to avoid false positives from Backend section
     local e2e_section=$(sed -n '/## E2E Tests/,/## Validation Summary/p' "$file")
     
+    # Detect critical failures first
+    if echo "$e2e_section" | grep -qE "FAILED|Timed out|failed|Error"; then
+        # Check if there are still some passing tests reported
+        local passed=$(echo "$e2e_section" | strip_colors | grep -oE "[0-9]+ passed" | head -1 || true)
+        if [[ -n "$passed" && "$passed" != "0 passed" ]]; then
+             echo "✗ Partial ($passed)"
+        else
+             echo "✗ Failed"
+        fi
+        return
+    fi
+
     # Try to find Playwright specific output first: "  9 passed (19.7s)"
     local playwright_line=$(echo "$e2e_section" | strip_colors | grep -E '^[[:space:]]+[0-9]+ passed \([0-9.]+s\)' | tail -1 || true)
     
     if [[ -n "$playwright_line" ]]; then
         echo "$playwright_line"
     else
-        # Fallback to Pytest output: "1 passed in 2.5s"
-        echo "$e2e_section" | strip_colors | grep -E "[0-9]+ passed [a-z0-9(). ]*s" | tail -1 || true
+        # Fallback to Pytest output, but AVOID the "1 passed" from the wrapper itself
+        # Wrapper is usually "1 passed" or "0 passed"
+        local pytest_line=$(echo "$e2e_section" | strip_colors | grep -E "[0-9]+ passed [a-z0-9(). ]*s" | tail -1 || true)
+        if [[ "$pytest_line" == "1 passed"* ]]; then
+            # If it's just 1 passed, it might be the wrapper. Check if anything else failed.
+            echo "✓ Subsystem OK"
+        else
+            echo "${pytest_line:-Unknown}"
+        fi
     fi
 }
 
@@ -138,26 +162,14 @@ if [[ -d "$NYC_OUTPUT_DIR" ]] && ls "$NYC_OUTPUT_DIR"/*.json 1>/dev/null 2>&1; t
     fi
 fi
 
-# Get test summaries - extract just the numbers
-FRONTEND_TESTS_RAW=$(extract_frontend_tests "$LOG_FILE")
-BACKEND_TESTS_RAW=$(extract_backend_tests "$LOG_FILE")
-
-# Parse frontend: "Tests  215 passed (215)" -> "215 passed"
-# Now handled inside extract_frontend_tests
+# Get test summaries
 FRONTEND_COUNTS=$(extract_frontend_tests "$LOG_FILE")
-
-# Parse backend: "=== 134 passed, 2 skipped... ===" -> "134 passed, 2 skipped"
-BACKEND_PASSED=$(echo "$BACKEND_TESTS_RAW" | grep -oE "[0-9]+ passed" | head -1)
-BACKEND_SKIPPED=$(echo "$BACKEND_TESTS_RAW" | grep -oE "[0-9]+ skipped" || echo "")
-BACKEND_DESELECTED=$(echo "$BACKEND_TESTS_RAW" | grep -oE "[0-9]+ deselected" || echo "")
-
-# Get E2E summary
-E2E_TESTS_RAW=$(extract_e2e_tests "$LOG_FILE")
-E2E_PASSED=$(echo "$E2E_TESTS_RAW" | grep -oE "[0-9]+ passed" | head -1)
+BACKEND_STATUS=$(extract_backend_tests "$LOG_FILE")
+E2E_STATUS=$(extract_e2e_tests "$LOG_FILE")
 
 # If E2E was skipped, ignore any falsely matched passed count
 if grep -qE "Skipping E2E tests|No E2E tests found" "$LOG_FILE"; then
-    E2E_PASSED=""
+    E2E_STATUS=""
 fi
 
 # Compliance status & counts
@@ -219,8 +231,7 @@ if [[ -z "$FRONTEND_COV" ]]; then
 fi
 
 if [[ -n "$FRONTEND_COUNTS" ]]; then
-    # Parse passed count to add emoji
-    if [[ "$FRONTEND_COUNTS" == *"failed"* ]]; then
+    if [[ "$FRONTEND_COUNTS" == *"❌"* || "$FRONTEND_COUNTS" == *"failed"* ]]; then
         FE_ICON="❌"
     else
         FE_ICON="✅"
@@ -245,8 +256,17 @@ E2E_COV_DISPLAY="${E2E_COV:--}"
 if [[ -n "$E2E_COV" ]]; then
     E2E_COV_DISPLAY="${E2E_COV}%"
 fi
-if [[ -n "$E2E_PASSED" ]]; then
-    echo "| E2E | ✅ $E2E_PASSED | $E2E_COV_DISPLAY | ${E2E_TIME} |"
+if [[ -n "$E2E_STATUS" ]]; then
+    if [[ "$E2E_STATUS" == *"✗"* || "$E2E_STATUS" == *"failed"* || "$E2E_STATUS" == *"Failed"* ]]; then
+        E2E_ICON="❌"
+    else
+        E2E_ICON="✅"
+    fi
+    # If the status already has an icon from extract_e2e_tests, we don't want to double up or mismatch
+    # extract_e2e_tests returns things like "✗ Partial (8 passed)" or "  8 passed (23.5s)"
+    # Clean it up: remove any leading icon if we are adding our own
+    E2E_CLEAN_STATUS=$(echo "$E2E_STATUS" | sed 's/^[✗✓✅❌][[:space:]]*//')
+    echo "| E2E | $E2E_ICON $E2E_CLEAN_STATUS | $E2E_COV_DISPLAY | ${E2E_TIME} |"
 else
     if grep -qE "Skipping E2E tests|No E2E tests found" "$LOG_FILE"; then
          echo "| E2E | ⚪ Skipped | - | - |"
@@ -265,28 +285,13 @@ if [[ -z "$BACKEND_COV" ]]; then
     fi
 fi
 
-if [[ -n "$BACKEND_PASSED" || -n "$BACKEND_DESELECTED" ]]; then
-    RESULT_STR=""
-    if [[ -n "$BACKEND_PASSED" ]]; then RESULT_STR="$BACKEND_PASSED"; fi
-    
-    if [[ -n "$BACKEND_SKIPPED" ]]; then 
-        if [[ -n "$RESULT_STR" ]]; then RESULT_STR="$RESULT_STR, $BACKEND_SKIPPED"; else RESULT_STR="$BACKEND_SKIPPED"; fi
-    fi
-    
-    if [[ -n "$BACKEND_DESELECTED" ]]; then
-        if [[ -n "$RESULT_STR" ]]; then RESULT_STR="$RESULT_STR, $BACKEND_DESELECTED"; else RESULT_STR="$BACKEND_DESELECTED"; fi
-    fi
-    
-    if [[ -z "$RESULT_STR" ]]; then RESULT_STR="0 passed"; fi
-    
-    # Determine icon
-    if [[ "${BACKEND_FAILED:-0}" -gt 0 || "$BACKEND_TESTS_RAW" == *"errors"* ]]; then
+if [[ -n "$BACKEND_STATUS" ]]; then
+    if [[ "$BACKEND_STATUS" == *"failed"* || "$BACKEND_STATUS" == *"error"* ]]; then
         BE_ICON="❌"
     else
         BE_ICON="✅"
     fi
-
-    echo "| Backend | $BE_ICON $RESULT_STR | $BACKEND_COV_DISPLAY | ${BACKEND_TIME} |"
+    echo "| Backend | $BE_ICON $BACKEND_STATUS | $BACKEND_COV_DISPLAY | ${BACKEND_TIME} |"
 else
     if grep -q "Skipping backend" "$LOG_FILE"; then
          echo "| Backend | ⚪ Skipped | - | - |"
@@ -328,7 +333,7 @@ fi
 
 # 5. Total (Bottom)
 if [[ -n "$TOTAL_COV" ]]; then
-    printf "  %-12s %24s %10s %8s\n" "TOTAL" "" "${TOTAL_COV}%" "${TOTAL_TIME}"
+    printf "  %-12s %24s %s code coverage in %s\n" "TOTAL" "" "${TOTAL_COV}%" "${TOTAL_TIME}"
     printf "  %-12s %24s %10s %8s\n" "------------" "------------------------" "--------" "--------"
 fi
 
@@ -353,8 +358,10 @@ fi
 
     # E2E output
     E_COV="${E2E_COV_DISPLAY}"
-    E_TESTS="${E2E_PASSED:-Not Run/Failed}"
-    if grep -qE "Skipping E2E tests|No E2E tests found" "$LOG_FILE"; then
+    E_TESTS="Not Run/Failed"
+    if [[ -n "$E2E_STATUS" ]]; then
+         E_TESTS=$(echo "$E2E_STATUS" | sed 's/^[✗✓✅❌][[:space:]]*//')
+    elif grep -qE "Skipping E2E tests|No E2E tests found" "$LOG_FILE"; then
          E_TESTS="Skipped"
     fi
     printf "%-10s | %-20s | %-10s | %-10s\n" "E2E" "$E_TESTS" "$E_COV" "$E2E_TIME"
@@ -362,9 +369,8 @@ fi
     # Backend output
     B_COV="${BACKEND_COV_DISPLAY}"
     B_TESTS="0 passed"
-    if [[ -n "$BACKEND_PASSED" || -n "$BACKEND_DESELECTED" ]]; then
-        B_TESTS="${BACKEND_PASSED:-0} passed"
-        if [[ -n "$BACKEND_SKIPPED" ]]; then B_TESTS="$B_TESTS, ${BACKEND_SKIPPED} skp"; fi
+    if [[ -n "$BACKEND_STATUS" ]]; then
+        B_TESTS="$BACKEND_STATUS"
     elif grep -q "Skipping backend" "$LOG_FILE"; then
          B_TESTS="Skipped"
     fi
@@ -377,7 +383,9 @@ fi
     
     echo "---------------------------------------------------------"
     if [[ -n "$TOTAL_COV" ]]; then
-        printf "%-10s   %-20s   %-10s   %-10s\n" "TOTAL" "" "${TOTAL_COV}%" "${TOTAL_TIME}"
+        printf "%-10s %24s %s code coverage in %s\n" "TOTAL" "" "${TOTAL_COV}%" "${TOTAL_TIME}"
+    else
+        printf "%-10s %24s %s in %s\n" "TOTAL" "" "-" "${TOTAL_TIME}"
     fi
     echo ""
 } >&2

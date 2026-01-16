@@ -65,7 +65,8 @@ def test_doc_extraction_regex():
     # Let's just create a dummy file in the REAL repo (ignored) and run the script?
     # No, that's messy.
 
-    # Correct approach: Make `document.py` accept a target directory argument in `main` or `extract_documentation`.
+    # Correct approach: Make `document.py` accept a target directory argument in `main` or
+    # `extract_documentation`.
     # It already does accept `root_dir` in `extract_documentation(root_dir)`.
 
     with TemporaryDirectory() as tmp_dir:

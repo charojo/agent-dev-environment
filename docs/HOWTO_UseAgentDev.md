@@ -187,14 +187,20 @@ Workflows are pre-defined sets of instructions that agents can access to perform
 
 <!-- WORKFLOWS_START -->
 | Command | Description |
+| :--- | :--- |
 | `/architecture-ade` | Architectural Changes and Big Feature Implementations |
-| `/cleanup-ade` | Clean up build artifacts and logs |
+| `/cleanup-ade` | Cleanup system files, caches, and logs |
 | `/css-review-ade` | Review CSS compliance and design system usage before merging |
 | `/design-planning-ade` | Design and Planning tasks (UI/UX, System Design) |
 | `/docs-path-integrity-ade` | How to maintain path integrity and avoid absolute paths in documentation |
+| `/doxygen-ade` | Serve the Doxygen documentation |
+| `/requirements-management-ade` | Guide the requirements and issues management process. |
+| `/safe-css-ade` | Run the Safe CSS validation workflow |
 | `/security-review-ade` | Perform a basic security review of the project |
+| `/triage-and-fix-loop-ade` | No description provided. |
 | `/ux-review-ade` | Perform a UX and Accessibility Review of the application |
 | `/validate-ade` | Run exhaustive QA and full project validation |
+| `/workday-ade` | Start a turbo workday session to work on design tasks and run validation |
 <!-- WORKFLOWS_END -->
 
 ## Automatic Updates
