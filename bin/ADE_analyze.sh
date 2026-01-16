@@ -192,7 +192,7 @@ echo ""
 echo "## Codebase Summary"
 # Find analyze_project.py relative to this script
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-python3 "$SCRIPT_DIR/ADE_analyze_project.py" --dual
+python3 "$SCRIPT_DIR/ADE_project_history.py" --analyze-local --dual
 echo ""
 
 echo ""
