@@ -69,7 +69,7 @@ INCLUDE_E2E=false    # E2E tests
 SKIP_FIX=false       # Skip auto-formatting
 PARALLEL=false       # Parallel test execution
 VERBOSE=false        # Detailed output
-E2E_ONLY=false       # Run ONLY E2E tests
+E2E_FILTER=""        # Filter for specific E2E test
 INITIALIZING=false   # Internal flag for missing coverage
 REFRESHING=false     # Internal flag for outdated coverage
 PYTEST_SELECTION=""  # Centralized selection args
@@ -113,16 +113,17 @@ ${BLUE}Validation Suite${NC}
 
 ${YELLOW}Usage:${NC} ./bin/validate.sh [tier] [options]
 
-${YELLOW}Tiers:${NC} (mutually exclusive)
-  --fast         ${GREEN}Fast${NC} - LOC-only tests for changes (~5s)
-  --medium       ${YELLOW}Medium${NC} - file-level coverage (~30s)
-  --full         ${BLUE}Full${NC} - all tests except \$ tests (~90s)
-  --exhaustive   ${RED}Exhaustive${NC} - mutation, parallel (~5m)
+${YELLOW}Tiers:${NC}
+  --${GREEN}screen${NC} System Health + Crash Smoke Test (15s)
+  --${GREEN}fast${NC}   Screen + Unit tests for CHANGED code + Auto-fix (40s)
+  --${YELLOW}e2e${NC}    Screen + Auto-fix + Full E2E Suite (35s)
+  --${BLUE}full${NC}   E2E + All Unit Tests + Coverage (75s)
+  --${RED}exhaustive${NC} Full + Parallel Execution + Mutation Testing (5m)
 
 ${YELLOW}Options:${NC}
   --live         Include \$ tests (Gemini API calls)
-  --e2e-only     Run ONLY E2E tests
-  --skip-e2e     Skip E2E tests (useful for full validation)
+  --e2e-select   Filter specific E2E test by name or number
+  --skip-e2e     Skip E2E tests (useful for debugging)
   --update-snapshots Update E2E visual snapshots
   --no-fix       Skip auto-formatting
   --parallel     Parallelize tests (auto in exhaustive)
@@ -133,16 +134,9 @@ ${YELLOW}Options:${NC}
 
 ${YELLOW}Examples:${NC}
   ./bin/validate.sh --fast         # Fast: quick changeset check
-  ./bin/validate.sh --medium       # Medium: file-level coverage
   ./bin/validate.sh --full         # Full: pre-commit validation
   ./bin/validate.sh --exhaustive   # Exhaustive: pre-merge
   ./bin/validate.sh --full --live  # Full + API tests
-
-${YELLOW}Tier Details:${NC}
-  Fast:       LOC-only (testmon), no lint, no E2E
-  Medium:     File-level, auto-fix, no E2E
-  Full:       All tests (skip \$), E2E, auto-fix, coverage
-  Exhaustive: All + mutation, parallel, multi-browser
 
 ${YELLOW}Notes:${NC}
   - \$ tests are marked "live" (Gemini API calls)
@@ -158,17 +152,15 @@ START_ARGS=$#
 while [[ $# -gt 0 ]]; do
     case $1 in
         --help|-h) show_help; exit 0 ;;
-        --medium) TIER="medium"; shift ;;
         --full) TIER="full"; shift ;;
         --exhaustive) TIER="exhaustive"; shift ;;
         --fast) TIER="fast"; shift ;;
+        --screen) TIER="screen"; shift ;;
         --live) INCLUDE_LIVE=true; shift ;;
         --debug) VERBOSE=true; PARALLEL=false; shift ;;
-        --e2e-only) E2E_ONLY=true; TIER="full"; shift ;;
-        --e2e)
+        --e2e) TIER="e2e"; shift ;;
+        --e2e-select)
             E2E_FILTER="$2"
-            E2E_ONLY=true
-            TIER="full"
             shift # past argument
             shift # past value
             ;;
@@ -206,14 +198,19 @@ fi
 # Auto-enable features based on tier
 case "$TIER" in
     fast)
-        # Minimal: skip lint, skip E2E
+        # Fast: change-based tests with auto-fix
         TIER="fast"
         ;;
-    medium)
-        # Balanced: auto-fix, skip E2E
+    screen)
+        # Smoke only: skip everything except Phase 0/0.5
+        INCLUDE_E2E=false # Full E2E suite skipped, but Phase 0.5 handles smoke
+        ;;
+    e2e)
+        # E2E: auto-fix, E2E tests only
+        INCLUDE_E2E=true
         ;;
     full)
-        # Complete: auto-fix, E2E
+        # Complete: auto-fix, E2E, all tests
         INCLUDE_E2E=true
         ;;
     exhaustive)
@@ -245,6 +242,7 @@ export COVERAGE_FILE="logs/.coverage"
 
 # Timing
 TOTAL_START=$(date +%s)
+PHASE0_DURATION=0
 FIX_DURATION=0
 BACKEND_DURATION=0
 FRONTEND_DURATION=0
@@ -309,7 +307,7 @@ if [ -z "$PYTHON_ENABLED" ]; then PYTHON_ENABLED="true"; fi
 if [ -z "$JS_ENABLED" ]; then JS_ENABLED="true"; fi
 
 
-if [[ "$TIER" == "fast" || "$TIER" == "medium" ]]; then
+if [[ "$TIER" == "fast" ]]; then
     if [[ ! -f "$TESTMON_DATAFILE" ]]; then
         log_msg "${YELLOW}🚀 Initializing Test Ecosystem... Building testmon database...${NC}"
         log_msg "${BLUE}Note: This initial scan maps your codebase to tests. It may take 1-3 minutes but speeds up future runs dramatically!${NC}"
@@ -323,7 +321,7 @@ if [[ "$TIER" == "fast" || "$TIER" == "medium" ]]; then
             REFRESHING=true
             PYTEST_SELECTION="--testmon"
         else
-            log_msg "Selection: $([[ "$TIER" == "fast" ]] && echo "LOC-only" || echo "File-level") (testmon)"
+            log_msg "Selection: LOC-only (testmon)"
             PYTEST_SELECTION="--testmon --testmon-forceselect"
         fi
     fi
@@ -347,12 +345,81 @@ fi
 
 
 # ============================================
-# Phase 1: Auto-fix (medium, full, exhaustive)
+# Phase 0: System Health & Compliance
+# ============================================
+## @fn run_system_checks
+# Performs critical startup and compliance checks.
+run_system_checks() {
+    if [ "$TIER" = "e2e" ] || [ "$TIER" = "exhaustive" ]; then
+        return
+    fi
+
+    echo -e "${BLUE}=== Phase 0: System Health & Compliance ===${NC}"
+    echo "## Phase 0: System Health & Compliance" >> "$LOG_FILE"
+    
+    local start=$(date +%s)
+    
+    log_msg "Verifying System Startup..."
+    if [ -f "bin/check_startup.py" ]; then
+        uv run python bin/check_startup.py 2>&1 | strip_ansi >> "$LOG_FILE"
+        if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            log_msg "${RED}CRITICAL: System health checks failed!${NC}"
+            exit 1
+        fi
+    fi
+
+    log_msg "Checking CSS Compliance..."
+    if [ -f "bin/check_css_compliance.py" ]; then
+        uv run python bin/check_css_compliance.py 2>&1 | strip_ansi >> "$LOG_FILE"
+        if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            log_msg "${RED}CRITICAL: CSS compliance failed!${NC}"
+            exit 1
+        fi
+    fi
+    
+    local end=$(date +%s)
+    PHASE0_DURATION=$((end - start))
+    echo "TIMING_METRIC: Phase0=${PHASE0_DURATION}s" >> "$LOG_FILE"
+}
+
+# ============================================
+# Phase 0.5: Smoke Test (Fast E2E)
+# ============================================
+## @fn run_smoke_test
+# Runs a lightweight E2E smoke test to detect frontend crashes.
+run_smoke_test() {
+    if [ "$TIER" = "e2e" ] || [ "$TIER" = "exhaustive" ]; then
+        return
+    fi
+    
+    echo -e "${BLUE}=== Phase 0.5: Smoke Test (Crash Detection) ===${NC}"
+    echo "## Phase 0.5: Smoke Test" >> "$LOG_FILE"
+    
+    local start=$(date +%s)
+    
+    if [ -f "bin/run_smoke_test.sh" ]; then
+        log_msg "Executing Smoke Test (Real-time output below)..."
+        ./bin/run_smoke_test.sh 2>&1 | tee >(strip_ansi >> "$LOG_FILE")
+        if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            log_msg "${RED}CRITICAL: Frontend smoke test failed! Runtime crash detected.${NC}"
+            log_msg "Check logs/frontend_e2e.log and logs/backend_e2e.log for details."
+            exit 1
+        fi
+    fi
+    
+    local end=$(date +%s)
+    PHASE05_DURATION=$((end - start))
+    echo "TIMING_METRIC: Phase0.5=${PHASE05_DURATION}s" >> "$LOG_FILE"
+}
+
+
+# ============================================
+# Phase 1: Auto-fix (fast, full, exhaustive)
 # ============================================
 ## @fn run_auto_fix
 # Runs ruff and npm lint to automatically fix formatting and linting issues.
 run_auto_fix() {
-    if [ "$SKIP_FIX" = true ] || [ "$TIER" = "fast" ] || [ "$E2E_ONLY" = true ]; then
+    if [ "$SKIP_FIX" = true ]; then
         echo -e "${YELLOW}Skipping auto-fix${NC}"
         return
     fi
@@ -389,8 +456,8 @@ run_backend_tests() {
         return
     fi
 
-    if [ "$E2E_ONLY" = true ]; then
-        log_msg "${YELLOW}Skipping backend (E2E only mode)${NC}"
+    if [ "$TIER" = "screen" ] || [ "$TIER" = "e2e" ] || [ "$TIER" = "exhaustive" ]; then
+        log_msg "${YELLOW}Skipping backend (tier: $TIER)${NC}"
         return
     fi
     
@@ -492,8 +559,8 @@ run_frontend_tests() {
         return
     fi
     
-    if [ "$E2E_ONLY" = true ]; then
-        log_msg "${YELLOW}Skipping frontend (E2E only mode)${NC}"
+    if [ "$TIER" = "screen" ] || [ "$TIER" = "e2e" ] || [ "$TIER" = "exhaustive" ]; then
+        log_msg "${YELLOW}Skipping frontend (tier: $TIER)${NC}"
         return
     fi
     
@@ -527,10 +594,6 @@ run_frontend_tests() {
                 echo "LOC map not found, using --changed"
                 vitest_args="--changed"
             fi
-            ;;
-        medium)
-            echo "Selection: File-level (--changed)"
-            vitest_args="--changed"
             ;;
         full|exhaustive)
             echo "Selection: All tests"
@@ -585,7 +648,7 @@ run_e2e_tests() {
         log_msg "${YELLOW}Snapshot update mode enabled.${NC}"
     fi
 
-    if [ "$INCLUDE_E2E" = false ] && [ "$E2E_ONLY" = false ]; then
+    if [ "$INCLUDE_E2E" = false ]; then
         log_msg ""
         log_msg "${YELLOW}Skipping E2E tests${NC}"
         echo "> **E2E Tests Skipped**" >> "$LOG_FILE"
@@ -601,6 +664,10 @@ run_e2e_tests() {
         log_msg "${YELLOW}No E2E tests found (src/web or tests/e2e), skipping.${NC}"
         return
     fi
+    if [ "$TIER" != "e2e" ] && [ "$TIER" != "full" ] && [ "$TIER" != "exhaustive" ]; then
+        export E2E_SKIP_SMOKE=true
+    fi
+
     echo -e "${BLUE}Starting servers and running browser tests (this may take 1-2 minutes)...${NC}"
     
     echo "## E2E Tests" >> "$LOG_FILE"
@@ -644,7 +711,7 @@ run_e2e_tests() {
 # Phase 5: Static Analysis
 # ============================================
 run_static_analysis() {
-    if [ "$TIER" = "fast" ] || [ "$E2E_ONLY" = true ]; then
+    if [ "$TIER" = "fast" ] || [ "$TIER" = "screen" ] || [ "$TIER" = "e2e" ]; then
         return
     fi
 
@@ -709,7 +776,6 @@ print_summary() {
     local tier_desc
     case "$TIER" in
         fast) tier_desc="Fast (LOC-only)" ;;
-        medium) tier_desc="Medium (file-level)" ;;
         full) tier_desc="Full (all tests)" ;;
         exhaustive) tier_desc="Exhaustive (max coverage)" ;;
     esac
@@ -760,6 +826,15 @@ print_summary() {
 # ============================================
 # Main Execution
 # ============================================
+run_system_checks || { echo -e "${RED}System health checks failed${NC}"; exit 1; }
+run_smoke_test || { echo -e "${RED}Frontend smoke test failed${NC}"; exit 1; }
+
+# Early exit for screen tier
+if [ "$TIER" = "screen" ]; then
+    print_summary
+    exit 0
+fi
+
 run_auto_fix || { echo -e "${RED}Auto-fix encountered issues${NC}"; exit 1; }
 run_backend_tests || { echo -e "${RED}Backend tests failed${NC}"; exit 1; }
 run_frontend_tests || { echo -e "${RED}Frontend tests failed${NC}"; exit 1; }
