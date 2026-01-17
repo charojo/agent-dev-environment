@@ -154,30 +154,39 @@ EOF
 # ============================================
 # Argument Parsing
 # ============================================
-for arg in "$@"; do
-    case $arg in
+START_ARGS=$#
+while [[ $# -gt 0 ]]; do
+    case $1 in
         --help|-h) show_help; exit 0 ;;
-        --medium) TIER="medium" ;;
-        --full) TIER="full" ;;
-        --exhaustive) TIER="exhaustive" ;;
-        --fast) TIER="fast" ;;
-        --live) INCLUDE_LIVE=true ;;
-        --debug) VERBOSE=true; PARALLEL=false ;; # Debug mode implies verbose and sequential
-        --e2e-only) E2E_ONLY=true; TIER="full" ;;
+        --medium) TIER="medium"; shift ;;
+        --full) TIER="full"; shift ;;
+        --exhaustive) TIER="exhaustive"; shift ;;
+        --fast) TIER="fast"; shift ;;
+        --live) INCLUDE_LIVE=true; shift ;;
+        --debug) VERBOSE=true; PARALLEL=false; shift ;;
+        --e2e-only) E2E_ONLY=true; TIER="full"; shift ;;
+        --e2e)
+            E2E_FILTER="$2"
+            E2E_ONLY=true
+            TIER="full"
+            shift # past argument
+            shift # past value
+            ;;
         --configure) 
              # Handled early, but consume arg
+             shift
              ;;
-        --config-tests) RUN_CONFIG_TESTS=true ;;
-        --no-fix) SKIP_FIX=true ;;
-        --parallel) PARALLEL=true ;;
-        --verbose|-v) VERBOSE=true ;;
-        --skip-e2e) SKIP_E2E_FLAG=true ;;  # Explicitly disable E2E
-        --update-snapshots) UPDATE_SNAPSHOTS=true ;;
-        *) echo -e "${RED}Unknown option: $arg${NC}"; show_help; exit 1 ;;
+        --config-tests) RUN_CONFIG_TESTS=true; shift ;;
+        --no-fix) SKIP_FIX=true; shift ;;
+        --parallel) PARALLEL=true; shift ;;
+        --verbose|-v) VERBOSE=true; shift ;;
+        --skip-e2e) SKIP_E2E_FLAG=true; shift ;;
+        --update-snapshots) UPDATE_SNAPSHOTS=true; shift ;;
+        *) echo -e "${RED}Unknown option: $1${NC}"; show_help; exit 1 ;;
     esac
 done
     
-if [ $# -eq 0 ]; then
+if [ $START_ARGS -eq 0 ]; then
     show_help
     exit 0
 fi
@@ -581,6 +590,11 @@ run_e2e_tests() {
         log_msg "${YELLOW}Skipping E2E tests${NC}"
         echo "> **E2E Tests Skipped**" >> "$LOG_FILE"
         return
+    fi
+
+    if [ -n "$E2E_FILTER" ]; then
+        export E2E_FILTER
+        log_msg "E2E Filter: $E2E_FILTER"
     fi
 
     if [ ! -d "src/web" ] && [ ! -d "tests/e2e" ]; then

@@ -151,20 +151,6 @@ def count_lines_file(file_path):
 
 def run_local_analysis(root_dir, args):
     """Analyzes the current filesystem (Local Mode)."""
-    exclude_dirs = {
-        ".venv",
-        "node_modules",
-        ".git",
-        "__pycache__",
-        ".pytest_cache",
-        "logs",
-        "build",
-        "dist",
-        "site-packages",
-        ".ruff_cache",
-        ".coverage",
-        "docs",
-    }
 
     # Check config
     try:
@@ -173,14 +159,14 @@ def run_local_analysis(root_dir, args):
         config = {}
 
     languages_config = config.get("languages", {})
-    if not languages_config:
-        languages_config = {
-            "python": {"enabled": True, "extensions": [".py"]},
-            "typescript": {"enabled": True, "extensions": [".ts", ".tsx", ".js", ".jsx"]},
-            "markdown": {"enabled": True, "extensions": [".md"]},
-        }
     if "markdown" not in languages_config:
         languages_config["markdown"] = {"enabled": True, "extensions": [".md"]}
+    if "css" not in languages_config:
+        languages_config["css"] = {"enabled": True, "extensions": [".css"]}
+    if "shell" not in languages_config:
+        languages_config["shell"] = {"enabled": True, "extensions": [".sh"]}
+    if "json" not in languages_config:
+        languages_config["json"] = {"enabled": True, "extensions": [".json"]}
 
     results = {}
     enabled_extensions = {}
@@ -192,21 +178,35 @@ def run_local_analysis(root_dir, args):
             for ext in lang_cfg.get("extensions", []):
                 enabled_extensions[ext] = lang_name
 
-    # Walk
-    for root, dirs, files in os.walk(root_dir):
-        dirs[:] = [d for d in dirs if d not in exclude_dirs]
-        for file in files:
-            file_path = Path(root) / file
-            _, ext = os.path.splitext(file)
+    # Use git ls-files to respect .gitignore
+    try:
+        cmd = ["git", "ls-files", "--cached", "--others", "--exclude-standard"]
+        git_files = subprocess.check_output(cmd, cwd=root_dir, text=True).splitlines()
+    except subprocess.CalledProcessError:
+        # Fallback to os.walk if not a git repo (unlikely here but safe)
+        git_files = []
+        for root, _, files in os.walk(root_dir):
+            for file in files:
+                git_files.append(os.path.relpath(os.path.join(root, file), root_dir))
 
-            if ext in enabled_extensions:
-                lang = enabled_extensions[ext]
-                loc, todos, fixmes = count_lines_file(file_path)
+    for file_rel_path in git_files:
+        file_path = root_dir / file_rel_path
+        filename = os.path.basename(file_rel_path)
 
-                results[lang]["files"] += 1
-                results[lang]["loc"] += loc
-                results[lang]["todos"] += todos
-                results[lang]["fixmes"] += fixmes
+        # Skip common lock files
+        if filename in ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "poetry.lock"]:
+            continue
+
+        _, ext = os.path.splitext(file_rel_path)
+
+        if ext in enabled_extensions:
+            lang = enabled_extensions[ext]
+            loc, todos, fixmes = count_lines_file(file_path)
+
+            results[lang]["files"] += 1
+            results[lang]["loc"] += loc
+            results[lang]["todos"] += todos
+            results[lang]["fixmes"] += fixmes
 
     # Output
     sorted_langs = sorted(results.keys())
@@ -229,7 +229,14 @@ def run_local_analysis(root_dir, args):
 
 
 def print_markdown_table_local(results, sorted_langs, metrics, keys):
-    header = "| Metric | " + " | ".join([lang.capitalize() for lang in sorted_langs]) + " | Total |"
+    def format_lang(lang):
+        if lang == "css":
+            return "CSS"
+        if lang == "json":
+            return "JSON"
+        return lang.title()
+
+    header = "| Metric | " + " | ".join([format_lang(lang) for lang in sorted_langs]) + " | Total |"
     divider = "| :--- | " + " | ".join([":---" for _ in sorted_langs]) + " | :--- |"
     print(header)
     print(divider)
@@ -245,9 +252,17 @@ def print_markdown_table_local(results, sorted_langs, metrics, keys):
 
 
 def print_text_table_to_stream(stream, results, sorted_langs, metrics, keys):
+    def format_lang(lang):
+        if lang == "css":
+            return "CSS"
+        if lang == "json":
+            return "JSON"
+        return lang.title()
+
     header = f"{'Metric':<20}"
     for lang in sorted_langs:
-        header += f"{lang.capitalize():<15}"
+        col_name = format_lang(lang)
+        header += f"{col_name:<15}"
     header += f"{'Total':<15}"
     print(header, file=stream)
     print("-" * len(header), file=stream)
@@ -276,7 +291,8 @@ def print_config_results(results_file, markdown=False):
             print("| :--- | :--- | :--- | :--- | :--- |")
             for r in report:
                 print(
-                    f"| {r['config']} | {r['status']} | {r['total_size']} | {r['venv_size']} | {r['node_modules_size']} |"
+                    f"| {r['config']} | {r['status']} | {r['total_size']} | "
+                    f"{r['venv_size']} | {r['node_modules_size']} |"
                 )
         else:
             print("\n=== Configuration Test Results ===")
@@ -285,7 +301,9 @@ def print_config_results(results_file, markdown=False):
             print("-" * len(header))
             for r in report:
                 print(
-                    f"{r['config']:<20} | {r['status']:<6} | {r['total_size']:<10} | {r['venv_size']:<10} | {r['node_modules_size']:<10}"
+                    f"{r['config']:<20} | {r['status']:<6} | "
+                    f"{r['total_size']:<10} | {r['venv_size']:<10} | "
+                    f"{r['node_modules_size']:<10}"
                 )
             print("-" * 70)
     except Exception as e:
@@ -314,9 +332,12 @@ def parse_existing_history(file_path):
             # Matches: | YYYY-MM-DD | `hash` | ...
             m = re.search(r"\|\s*\d{4}-\d{2}-\d{2}\s*\|\s*`([^`]+)`", line)
             if m:
-                # If we assume the file is sorted newest-first, the first match is the latest commit tracked.
-                # However, if we append new commits to the file, we might be prepending or rewriting.
-                # If the user asks for incremental, we likely want to catch up from the *newest known* commit to HEAD.
+                # If we assume the file is sorted newest-first,
+                # the first match is the latest commit tracked.
+                # However, if we append new commits to the file,
+                # we might be prepending or rewriting.
+                # If the user asks for incremental, we likely want to catch up
+                # from the *newest known* commit to HEAD.
                 last_commit = m.group(1)
                 # We can stop at the first one found if the list is ordered Newest -> Oldest
                 break
@@ -329,10 +350,15 @@ def run_history_analysis(root_dir, args):
 
     existing_content = []
 
+    # Hardcoded output path in docs/
+    output_path = root_dir / "docs" / "history.md"
+    # Ensure docs directory exists
+    output_path.parent.mkdir(exist_ok=True)
+
     # Incremental Logic
-    if args.incremental and args.output and os.path.exists(args.output):
-        print(f"Incremental mode: Checking {args.output} for last commit...", file=sys.stderr)
-        last_tracked = parse_existing_history(args.output)
+    if args.incremental and os.path.exists(output_path):
+        print(f"Incremental mode: Checking {output_path} for last commit...", file=sys.stderr)
+        last_tracked = parse_existing_history(output_path)
         if last_tracked:
             print(f"Found last tracked commit: {last_tracked}", file=sys.stderr)
             # If we tried to assume that last_commit is part of history, we use it as 'since'
@@ -341,7 +367,7 @@ def run_history_analysis(root_dir, args):
 
             # Read existing content to preserve it (excluding header if we rewrite)
             # Actually, simpler to just read the whole file, strip header, and append to new rows
-            with open(args.output, "r") as f:
+            with open(output_path, "r") as f:
                 existing_content = f.readlines()
         else:
             print(
@@ -351,7 +377,8 @@ def run_history_analysis(root_dir, args):
     commits = get_commits(cwd, args.limit, since_commit)
 
     # If using 'since', the commits returned are new ones.
-    # If we are strictly prepending new data to old data, we need to sort commits Newest -> Oldest (default log).
+    # If we are strictly prepending new data to old data,
+    # we need to sort commits Newest -> Oldest (default log).
 
     if not commits:
         print("No new commits to analyze.", file=sys.stderr)
@@ -372,6 +399,8 @@ def run_history_analysis(root_dir, args):
         ".tsx": "typescript",
         ".md": "markdown",
         ".css": "css",
+        ".sh": "shell",
+        ".json": "json",
     }
 
     processed_count = 0
@@ -390,10 +419,19 @@ def run_history_analysis(root_dir, args):
             "author": commit["author"],
             "todos": 0,
             "fixmes": 0,
+            # Source code LOC (non-test)
             "loc_python": 0,
             "loc_typescript": 0,
             "loc_markdown": 0,
+            "loc_css": 0,
+            "loc_shell": 0,
+            "loc_json": 0,
             "loc_total": 0,
+            # Test code LOC
+            "test_loc_python": 0,
+            "test_loc_typescript": 0,
+            "test_loc_shell": 0,
+            "test_loc_total": 0,
             "test_files": 0,
         }
 
@@ -407,18 +445,41 @@ def run_history_analysis(root_dir, args):
 
             stats["todos"] += todos
             stats["fixmes"] += fixmes
-            stats["loc_total"] += loc
 
             lang = lang_map[ext]
-            if lang == "python":
-                stats["loc_python"] += loc
-            elif lang in ["typescript", "javascript"]:
-                stats["loc_typescript"] += loc
-            elif lang == "markdown":
-                stats["loc_markdown"] += loc
+            is_test = is_test_file(file_path)
 
-            if is_test_file(file_path):
+            if is_test:
                 stats["test_files"] += 1
+                stats["test_loc_total"] += loc
+                if lang == "python":
+                    stats["test_loc_python"] += loc
+                elif lang in ["typescript", "javascript"]:
+                    stats["test_loc_typescript"] += loc
+                elif lang == "shell":
+                    stats["test_loc_shell"] += loc
+            else:
+                # Non-test source code
+                stats["loc_total"] += loc
+                if lang == "python":
+                    stats["loc_python"] += loc
+                elif lang in ["typescript", "javascript"]:
+                    stats["loc_typescript"] += loc
+                elif lang == "markdown":
+                    stats["loc_markdown"] += loc
+                elif lang == "css":
+                    stats["loc_css"] += loc
+                elif lang == "shell":
+                    stats["loc_shell"] += loc
+                elif lang == "json":
+                    filename = os.path.basename(file_path)
+                    if filename not in [
+                        "package-lock.json",
+                        "pnpm-lock.yaml",
+                        "yarn.lock",
+                        "poetry.lock",
+                    ]:
+                        stats["loc_json"] += loc
 
         history_data.append(stats)
 
@@ -429,7 +490,8 @@ def run_history_analysis(root_dir, args):
     for row in history_data:
         new_rows.append(
             f"| {row['date']} | `{row['commit']}` | {row['author']} | "
-            f"{row['loc_total']} | {row['loc_python']} | {row['loc_typescript']} | {row['loc_markdown']} | "
+            f"{row['loc_total']} | {row['loc_python']} | {row['loc_typescript']} | "
+            f"{row['loc_markdown']} | {row['loc_css']} | {row['loc_shell']} | {row['loc_json']} | "
             f"{row['test_files']} | {row['todos']} | {row['fixmes']} |"
         )
 
@@ -440,9 +502,10 @@ def run_history_analysis(root_dir, args):
         final_output.append(f"Generated on {datetime.now().isoformat()}")
         final_output.append("")
         final_output.append(
-            "| Date | Commit | Author | Total LOC | Py LOC | TS/JS LOC | MD LOC | Tests | TODOs | NEEDS_FIX |"
+            "| Date | Commit | Author | Total LOC | Py LOC | TS/JS LOC | MD LOC | "
+            "CSS LOC | SH LOC | JSON LOC | Tests | TODOs | NEEDS_FIX |"
         )
-        final_output.append("|---|---|---|---|---|---|---|---|---|---|")
+        final_output.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         final_output.extend(new_rows)
     else:
         # We need to insert new rows after the header.
@@ -469,32 +532,28 @@ def run_history_analysis(root_dir, args):
             final_output.extend(new_rows)
 
     # Sort data for graphing (Oldest -> Newest)
-    # If final_output generation relies on the existing + new mix, we need to reconstruct the full dataset for the graph.
-    # Parsing the lines we just generated is one way.
+    # Build graph data directly from history_data instead of parsing markdown
+    daily_data = {}
+    for row in history_data:
+        date = row["date"]
+        if date not in daily_data:
+            daily_data[date] = {
+                "date": date,
+                "loc_total": row["loc_total"],
+                "loc_py": row["loc_python"],
+                "loc_ts": row["loc_typescript"],
+                "loc_css": row["loc_css"],
+                "loc_sh": row["loc_shell"],
+                "loc_json": row["loc_json"],
+                "test_loc_total": row["test_loc_total"],
+                "test_loc_py": row["test_loc_python"],
+                "test_loc_ts": row["test_loc_typescript"],
+                "test_loc_sh": row["test_loc_shell"],
+                "todos": row["todos"],
+                "fixmes": row["fixmes"],
+            }
 
-    # Let's parse the final report lines back into data structures for the graph
-    graph_data = []
-
-    # Regex to parse the table rows
-    # | Date | Commit | Author | Total LOC | Py LOC | TS/JS LOC | MD LOC | Tests | TODOs | NEEDS_FIX |
-    row_regex = re.compile(
-        r"\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*`([^`]+)`\s*\|\s*([^|]+)\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|"
-    )
-
-    for line in final_output:
-        m = row_regex.search(line)
-        if m:
-            graph_data.append(
-                {
-                    "date": m.group(1),
-                    "loc_total": int(m.group(4)),
-                    "loc_py": int(m.group(5)),
-                    "loc_ts": int(m.group(6)),
-                    "todos": int(m.group(9)),
-                    "fixmes": int(m.group(10)),
-                }
-            )
-
+    graph_data = list(daily_data.values())
     # Sort by date ascending for the chart
     graph_data.sort(key=lambda x: x["date"])
 
@@ -549,7 +608,9 @@ def run_history_analysis(root_dir, args):
 
             # Title
             svg.append(
-                f'<text x="{self.width / 2}" y="30" text-anchor="middle" font-family="sans-serif" font-size="20" font-weight="bold">{self.title}</text>'
+                f'<text x="{self.width / 2}" y="30" text-anchor="middle" '
+                f'font-family="sans-serif" font-size="20" font-weight="bold">'
+                f"{self.title}</text>"
             )
 
             # Axes
@@ -559,10 +620,12 @@ def run_history_analysis(root_dir, args):
             plot_right = self.width - self.padding
 
             svg.append(
-                f'<line x1="{plot_left}" y1="{plot_bottom}" x2="{plot_right}" y2="{plot_bottom}" stroke="black" stroke-width="2"/>'
+                f'<line x1="{plot_left}" y1="{plot_bottom}" x2="{plot_right}" '
+                f'y2="{plot_bottom}" stroke="black" stroke-width="2"/>'
             )  # X Axis
             svg.append(
-                f'<line x1="{plot_left}" y1="{plot_bottom}" x2="{plot_left}" y2="{plot_top}" stroke="black" stroke-width="2"/>'
+                f'<line x1="{plot_left}" y1="{plot_bottom}" x2="{plot_left}" '
+                f'y2="{plot_top}" stroke="black" stroke-width="2"/>'
             )  # Y Axis
 
             # Y Labels (5 steps)
@@ -570,13 +633,16 @@ def run_history_analysis(root_dir, args):
                 val = min_val + (max_val - min_val) * (i / 5)
                 y = get_y(val)
                 svg.append(
-                    f'<line x1="{plot_left - 5}" y1="{y}" x2="{plot_left}" y2="{y}" stroke="black"/>'
+                    f'<line x1="{plot_left - 5}" y1="{y}" x2="{plot_left}" '
+                    f'y2="{y}" stroke="black"/>'
                 )
                 svg.append(
-                    f'<text x="{plot_left - 10}" y="{y + 5}" text-anchor="end" font-family="sans-serif" font-size="12">{int(val)}</text>'
+                    f'<text x="{plot_left - 10}" y="{y + 5}" text-anchor="end" '
+                    f'font-family="sans-serif" font-size="12">{int(val)}</text>'
                 )
                 svg.append(
-                    f'<line x1="{plot_left}" y1="{y}" x2="{plot_right}" y2="{y}" stroke="#ddd" stroke-dasharray="4"/>'
+                    f'<line x1="{plot_left}" y1="{y}" x2="{plot_right}" y2="{y}" '
+                    f'stroke="#ddd" stroke-dasharray="4"/>'
                 )  # Grid
 
             # X Labels (Sampled if too many) - Simplified logic
@@ -585,10 +651,14 @@ def run_history_analysis(root_dir, args):
             for i in range(0, count, step):
                 x = get_x(i, count)
                 svg.append(
-                    f'<line x1="{x}" y1="{plot_bottom}" x2="{x}" y2="{plot_bottom + 5}" stroke="black"/>'
+                    f'<line x1="{x}" y1="{plot_bottom}" x2="{x}" '
+                    f'y2="{plot_bottom + 5}" stroke="black"/>'
                 )
                 svg.append(
-                    f'<text x="{x}" y="{plot_bottom + 10}" text-anchor="start" font-family="sans-serif" font-size="10" transform="rotate(45, {x}, {plot_bottom + 10})">{self.x_labels[i]}</text>'
+                    f'<text x="{x}" y="{plot_bottom + 10}" text-anchor="start" '
+                    f'font-family="sans-serif" font-size="10" '
+                    f'transform="rotate(45, {x}, {plot_bottom + 10})">'
+                    f"{self.x_labels[i]}</text>"
                 )
 
             # Legend
@@ -600,7 +670,8 @@ def run_history_analysis(root_dir, args):
                     f'<rect x="{legend_x}" y="{ly}" width="10" height="10" fill="{line["color"]}"/>'
                 )
                 svg.append(
-                    f'<text x="{legend_x + 15}" y="{ly + 10}" font-family="sans-serif" font-size="12">{line["label"]}</text>'
+                    f'<text x="{legend_x + 15}" y="{ly + 10}" '
+                    f'font-family="sans-serif" font-size="12">{line["label"]}</text>'
                 )
 
             # Lines
@@ -612,17 +683,18 @@ def run_history_analysis(root_dir, args):
                     y = get_y(val)
                     points.append(f"{x},{y}")
 
-                polyline = f'<polyline points="{" ".join(points)}" fill="none" stroke="{line["color"]}" stroke-width="2"/>'
+                polyline = (
+                    f'<polyline points="{" ".join(points)}" fill="none" '
+                    f'stroke="{line["color"]}" stroke-width="2"/>'
+                )
                 svg.append(polyline)
 
             svg.append("</svg>")
             return "\n".join(svg)
 
     # Assets Setup
-    assets_dir = None
-    if args.output:
-        assets_dir = Path(args.output).parent / (Path(args.output).stem + "_assets")
-        assets_dir.mkdir(exist_ok=True)
+    assets_dir = root_dir / "docs" / "history_assets"
+    assets_dir.mkdir(exist_ok=True)
 
     def generate_chart(title, generator_func, filename_base, mermaid_def):
         """Generates a chart using SVG generator, falling back to mermaid block if needed."""
@@ -635,7 +707,7 @@ def run_history_analysis(root_dir, args):
                     f.write(svg_content)
 
                 # Relativize path for the link
-                rel_path = os.path.relpath(output_svg, Path(args.output).parent)
+                rel_path = os.path.relpath(output_svg, output_path.parent)
                 return f"![{title}]({rel_path})"
             except Exception as e:
                 print(f"Failed to generate SVG for {filename_base}: {e}", file=sys.stderr)
@@ -671,32 +743,73 @@ def run_history_analysis(root_dir, args):
 
         # LOC Chart
 
-        charts.append("## Project Growth")
+        charts.append("## Source Code Growth")
 
         dates = [d["date"] for d in graph_data]
         py_data = [d["loc_py"] for d in graph_data]
         ts_data = [d["loc_ts"] for d in graph_data]
+        css_data = [d["loc_css"] for d in graph_data]
+        sh_data = [d["loc_sh"] for d in graph_data]
+        json_data = [d["loc_json"] for d in graph_data]
         total_data = [d["loc_total"] for d in graph_data]
 
         # Mermaid Fallback Definition
         loc_def = "xychart-beta\n"
-        loc_def += '    title "Lines of Code over Time"\n'
+        loc_def += '    title "Source Lines of Code over Time"\n'
         loc_def += f"    x-axis {json.dumps(dates)}\n"
         loc_def += '    y-axis "LOC"\n'
         loc_def += f'    line {json.dumps(total_data)} "Total"\n'
         loc_def += f'    line {json.dumps(py_data)} "Python"\n'
-        loc_def += f'    line {json.dumps(ts_data)} "TS/JS"'
+        loc_def += f'    line {json.dumps(ts_data)} "TS/JS"\n'
+        loc_def += f'    line {json.dumps(css_data)} "CSS"\n'
+        loc_def += f'    line {json.dumps(sh_data)} "Shell"\n'
+        loc_def += f'    line {json.dumps(json_data)} "JSON"'
 
         def make_loc_svg():
-            chart = SimpleSVGChart("Lines of Code over Time")
+            chart = SimpleSVGChart("Source Lines of Code over Time")
             chart.set_x_labels(dates)
             chart.add_line(total_data, "Total", "#2196F3")  # Blue
             chart.add_line(py_data, "Python", "#4CAF50")  # Green
             chart.add_line(ts_data, "TS/JS", "#ff9800")  # Orange
+            chart.add_line(css_data, "CSS", "#9c27b0")  # Purple
+            chart.add_line(sh_data, "Shell", "#795548")  # Brown
+            chart.add_line(json_data, "JSON", "#607d8b")  # Blue Grey
             return chart.generate()
 
         charts.append(
-            generate_chart("Lines of Code over Time", make_loc_svg, "loc_history", loc_def)
+            generate_chart("Source Lines of Code over Time", make_loc_svg, "loc_history", loc_def)
+        )
+
+        # Test Code Chart
+        charts.append("\n## Test Code Growth")
+
+        test_total_data = [d["test_loc_total"] for d in graph_data]
+        test_py_data = [d["test_loc_py"] for d in graph_data]
+        test_ts_data = [d["test_loc_ts"] for d in graph_data]
+        test_sh_data = [d["test_loc_sh"] for d in graph_data]
+
+        test_def = "xychart-beta\n"
+        test_def += '    title "Test Lines of Code over Time"\n'
+        test_def += f"    x-axis {json.dumps(dates)}\n"
+        test_def += '    y-axis "LOC"\n'
+        test_def += f'    line {json.dumps(test_total_data)} "Total"\n'
+        test_def += f'    line {json.dumps(test_py_data)} "Python"\n'
+        test_def += f'    line {json.dumps(test_ts_data)} "TS/JS"\n'
+        test_def += f'    line {json.dumps(test_sh_data)} "Shell"'
+
+        def make_test_svg():
+            chart = SimpleSVGChart("Test Lines of Code over Time")
+            chart.set_x_labels(dates)
+            chart.add_line(test_total_data, "Total", "#2196F3")  # Blue
+            chart.add_line(test_py_data, "Python", "#4CAF50")  # Green
+            chart.add_line(test_ts_data, "TS/JS", "#ff9800")  # Orange
+            chart.add_line(test_sh_data, "Shell", "#795548")  # Brown
+            return chart.generate()
+
+        charts.append(
+            generate_chart(
+                "Test Lines of Code over Time", make_test_svg, "test_loc_history", test_def
+            )
         )
 
         # Debt Chart
@@ -736,12 +849,9 @@ def run_history_analysis(root_dir, args):
 
     report = "\n".join(final_output) + "\n"
 
-    if args.output:
-        with open(args.output, "w") as f:
-            f.write(report)
-        print(f"Report written to {args.output}", file=sys.stderr)
-    else:
-        print(report)
+    with open(output_path, "w") as f:
+        f.write(report)
+    print(f"Report written to {output_path}", file=sys.stderr)
 
 
 def main():
@@ -754,7 +864,6 @@ def main():
     )
     parser.add_argument("--limit", type=int, default=None, help="Limit number of commits")
     parser.add_argument("--reverse", action="store_true", help="Oldest to Newest")
-    parser.add_argument("--output", help="Output file")
     parser.add_argument("--since", help="Analyze commits since this hash")
     parser.add_argument(
         "--incremental", action="store_true", help="Append new commits to existing output file"
@@ -835,7 +944,8 @@ def check_submodule_status(project_root):
 
         if expected_hash != actual_hash:
             print(
-                f"ℹ️  Submodule Check: agent_env is at {actual_hash[:7]} (Superproject expects {expected_hash[:7]}).",
+                f"ℹ️  Submodule Check: agent_env is at {actual_hash[:7]} "
+                f"(Superproject expects {expected_hash[:7]}).",
                 file=sys.stderr,
             )
             print("   Assuming local development mode. No changes made.", file=sys.stderr)
