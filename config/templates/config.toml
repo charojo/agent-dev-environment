@@ -1,0 +1,25 @@
+[project]
+# name = "your-project-name"
+
+[languages.python]
+enabled = true
+description = "Python support (required for core scripts and backend)"
+extensions = [".py"]
+
+[languages.typescript]
+enabled = false
+description = "TypeScript/JavaScript support (TypeScript and TypeDoc recommended)"
+extensions = [".ts", ".tsx", ".js", ".jsx"]
+
+[features.documentation]
+enabled = false
+description = "Design Specifications and Diagrams (Markdown/PDF)"
+
+[features.api_docs]
+enabled = false
+description = "API Documentation (Doxygen for Python, TypeDoc for TS/JS)"
+
+[features.pygame]
+enabled = false
+description = "Pygame Community Edition (rendering engine)"
+extra = "pygame"

@@ -6,8 +6,8 @@ This script parses `config.toml` and allows shell scripts to query values
 such as enabled languages, features, and their associated extras/markers.
 """
 
-import sys
 import argparse
+import sys
 from pathlib import Path
 
 # Try importing tomllib (Python 3.11+) or tomli
@@ -22,15 +22,20 @@ except ImportError:
 
 
 def load_config(root_dir):
-    config_path = root_dir / "config.toml"
-    if not config_path.exists():
-        # Fallback to agent_env/config.toml if in a submodule context
-        if (root_dir / "agent_env" / "config.toml").exists():
-            config_path = root_dir / "agent_env" / "config.toml"
-        elif (root_dir / ".agent" / "config.toml").exists():
-            config_path = root_dir / ".agent" / "config.toml"
-        else:
-            return {}
+    # Priority 1: Check Project Root (one level up from submodule root)
+    if (root_dir.parent / "config.toml").exists():
+        config_path = root_dir.parent / "config.toml"
+    # Priority 2: Check Submodule Root
+    elif (root_dir / "config.toml").exists():
+        config_path = root_dir / "config.toml"
+    # Priority 3: Fallback to agent_env/config.toml if in a submodule context
+    elif (root_dir / "agent_env" / "config.toml").exists():
+        config_path = root_dir / "agent_env" / "config.toml"
+    # Priority 4: Fallback to .agent/config.toml
+    elif (root_dir / ".agent" / "config.toml").exists():
+        config_path = root_dir / ".agent" / "config.toml"
+    else:
+        return {}
 
     try:
         with open(config_path, "rb") as f:
@@ -58,24 +63,16 @@ def main():
 
     # Command: get <path>
     get_parser = subparsers.add_parser("get", help="Get a specific value")
-    get_parser.add_argument(
-        "path", help="Dot-notation path (e.g. languages.python.enabled)"
-    )
+    get_parser.add_argument("path", help="Dot-notation path (e.g. languages.python.enabled)")
 
     # Command: get-extras
-    subparsers.add_parser(
-        "get-extras", help="Get list of pip extras for enabled features"
-    )
+    subparsers.add_parser("get-extras", help="Get list of pip extras for enabled features")
 
     # Command: get-markers
-    subparsers.add_parser(
-        "get-markers", help="Get pytest markers to EXCLUDE disabled features"
-    )
+    subparsers.add_parser("get-markers", help="Get pytest markers to EXCLUDE disabled features")
 
     # Command: get-enabled-languages
-    subparsers.add_parser(
-        "get-enabled-languages", help="Get list of enabled language keys"
-    )
+    subparsers.add_parser("get-enabled-languages", help="Get list of enabled language keys")
 
     args = parser.parse_args()
 

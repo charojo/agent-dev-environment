@@ -1,5 +1,6 @@
-import tomli
 from pathlib import Path
+
+import tomli
 
 
 def test_version_matches():

@@ -18,6 +18,15 @@ grep -rE "#[0-9a-fA-F]{3,6}" src/web/src/components/*.jsx --include="*.jsx" | gr
 
 **Expected**: All colors should use `var(--color-*)` CSS variables from `index.css`.
 
+## 2. Verify with Safe CSS
+
+After fixing any compliance issues, run the Safe CSS workflow to ensure no visual regressions were introduced:
+
+// turbo
+```bash
+./agent_env/bin/ADE_safe_css.sh
+```
+
 ## 2. Audit Inline Style Usage
 
 Count components with excessive inline styles:
@@ -48,10 +57,10 @@ grep -A5 'className="btn-icon"' src/web/src/components/*.jsx | grep -E "(backgro
 ## 4. Run Automated Checks
 
 // turbo
-./scripts/check_css_compliance.py
+../bin/check_css_compliance.py
 
 // turbo
-./scripts/check_contrast.py
+../bin/check_contrast.py
 
 ## 5. Cross-Reference Design Tokens
 

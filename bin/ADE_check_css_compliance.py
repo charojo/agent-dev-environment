@@ -96,7 +96,6 @@ def find_btn_icon_overrides(file_path: Path) -> list[tuple[int, str]]:
 def main():
     parser = argparse.ArgumentParser(description="Check CSS compliance")
     parser.add_argument("--output", type=str, help="Output file path")
-    parser.add_argument("--strict", action="store_true", help="Fail on any violation")
     args = parser.parse_args()
 
     components_dir = Path("src/web/src/components")
@@ -133,9 +132,7 @@ def main():
         threshold = 30 if jsx_file.name in INLINE_STYLE_EXCEPTIONS else 15
         if style_count > threshold:
             style_issues += 1
-            file_issues.append(
-                f"  Excessive inline styles: {style_count} (threshold: {threshold})"
-            )
+            file_issues.append(f"  Excessive inline styles: {style_count} (threshold: {threshold})")
 
         # Check btn-icon overrides
         overrides = find_btn_icon_overrides(jsx_file)
@@ -166,8 +163,8 @@ def main():
         report_lines.append("✅ All checks passed!")
         exit_code = 0
     else:
-        report_lines.append("⚠️  Issues found - review recommended")
-        exit_code = 1 if args.strict else 0
+        report_lines.append("⚠️  Issues found - validation failed")
+        exit_code = 1
 
     report = "\n".join(report_lines)
 

@@ -39,9 +39,9 @@ This will help you enable/disable:
 
 The agent looks in `workflows/` for instructions on how to perform tasks.
 
-*   `workflows/core/validate.md`: Run tests and validation.
-*   `workflows/core/cleanup.md`: Clean build artifacts and logs.
-*   `workflows/core/architecture.md`: Reference for project structure.
+*   `workflows/validate-ade.md`: Run tests and validation.
+*   `workflows/cleanup-ade.md`: Clean build artifacts and logs.
+*   `workflows/architecture-ade.md`: Reference for project structure.
 
 ## Documentation
 

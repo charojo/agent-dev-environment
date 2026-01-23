@@ -5,13 +5,15 @@
 # diagrams (SVG/PNG). It also triggers source code link updates to ensure
 # documentation always points to the latest generated assets.
 #
-# See architecture: [validate_workflow.svg](../docs/assets/images/validate_workflow.svg) <!-- @diagram: validate_workflow.svg -->
+# See architecture: [validate_workflow.svg](../docs/assets/diagrams/validate_workflow.svg)
+# <!-- @diagram: validate_workflow.svg -->
 
 """
 Automated Diagram Generator for Papeterie Engine.
-Scans the repository for *.dot files and compiles them to *.png using Graphviz.
+Scans the repository for *.dot files and compiles them to *.svg using Graphviz.
 """
 
+import argparse
 import subprocess
 import sys
 from pathlib import Path
@@ -50,10 +52,23 @@ def compile_dot_to_file(dot_file, fmt="png", dpi=300):
         sys.exit(1)
 
 
-def main():
-    # bin/generate_diagrams.py -> bin -> root
-    script_path = Path(__file__).resolve()
-    project_root = script_path.parent.parent
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Generate diagrams from DOT files.")
+    parser.add_argument(
+        "directory", nargs="?", help="Directory to scan (defaults to git root or current dir)"
+    )
+    args = parser.parse_args(argv)
+
+    if args.directory:
+        project_root = Path(args.directory).resolve()
+    else:
+        try:
+            root_str = subprocess.check_output(
+                ["git", "rev-parse", "--show-toplevel"], universal_newlines=True
+            ).strip()
+            project_root = Path(root_str)
+        except subprocess.CalledProcessError:
+            project_root = Path.cwd()
 
     print(f"Project Root: {project_root}")
 
@@ -74,15 +89,15 @@ def main():
     # Update diagram links in source code
     print("\nUpdating diagram links in source code...")
     try:
-        # Import document module dynamically or assume it's in the same dir
-        sys.path.append(str(script_path.parent))
-        import document
+        # Import document module dynamically
+        import ADE_document as document
 
         document.update_diagram_links(project_root)
 
         # Also run doc extraction while we are at it?
         # The user requested "generate_diagrams also updates links into the source code"
-        # It didn't explicitly ask for doc extraction here, but it's part of the same "self-documenting" workflow.
+        # It didn't explicitly ask for doc extraction here, but it's part of the same
+        # "self-documenting" workflow.
         # But let's stick to the prompt: "generate_diagrams also updates links".
         # I'll adhere to the plan which said "Integrate bin/document.py to trigger link updates".
     except ImportError:

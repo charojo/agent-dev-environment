@@ -16,8 +16,8 @@ This workflow ensures that all project documentation (files in `docs/`) uses rel
 1.  **Check for Absolute Paths**:
     Before committing or finalizing any design document, run the path enforcement script:
     ```bash
-    uv run python bin/enforce_relative_paths.py
-    # OR if in submodule: uv run python agent_env/bin/enforce_relative_paths.py
+    uv run python agent_env/bin/ADE_enforce_relative_paths.py
+    # OR if in submodule: uv run python agent_env/bin/ADE_enforce_relative_paths.py
     ```
 
 2.  **Fixing Violations**:
@@ -37,8 +37,8 @@ This workflow ensures that all project documentation (files in `docs/`) uses rel
     - **Registry**: Place `.dot` source files in `docs/assets/diagrams/`.
     - **Generation**: After modifying any `.dot` file, you MUST generate/update the corresponding PNG:
       ```bash
-      uv run python bin/generate_diagrams.py
-      # OR if in submodule: uv run python agent_env/bin/generate_diagrams.py
+      uv run python agent_env/bin/ADE_generate_diagrams.py
+      # OR if in submodule: uv run python agent_env/bin/ADE_generate_diagrams.py
       ```
     - **Linking**: Embed diagrams using relative SVG paths and provide a link to the DOT source:
       ```markdown

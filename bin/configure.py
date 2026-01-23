@@ -20,6 +20,7 @@ Features:
 
 import argparse
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -41,17 +42,53 @@ except ImportError:
 # We will implement a simple parser for enabling/disabling known keys.
 
 
+def get_config_path(root_dir):
+    # Priority 1: Check Project Root
+    if (root_dir.parent / "config.toml").exists():
+        return root_dir.parent / "config.toml"
+
+    # Priority 2: Return Project Root path even if missing (to create it)
+    return root_dir.parent / "config.toml"
+
+
 def load_config(root_dir):
-    config_path = root_dir / "config.toml"
+    config_path = get_config_path(root_dir)
+
+    # Initialize from template if missing
     if not config_path.exists():
-        return {}
+        template_path = root_dir / "config/templates/config.toml"
+        if template_path.exists():
+            print(f"✨ Initializing {config_path} from template...")
+            copy_if_changed(template_path, config_path)
+        else:
+            return {}
+
     with open(config_path, "rb") as f:
         return toml.load(f)
 
 
-def save_lines(config_path, lines):
+def save_lines(root_dir, lines):
+    config_path = get_config_path(root_dir)
     with open(config_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
+
+
+def copy_if_changed(src, dst):
+    """
+    Copies src to dst only if dst does not exist or content differs.
+    Returns True if copied, False otherwise.
+    """
+    if not os.path.exists(dst):
+        shutil.copy2(src, dst)
+        return True
+
+    # Compare content
+    with open(src, "rb") as f1, open(dst, "rb") as f2:
+        if f1.read() == f2.read():
+            return False
+
+    shutil.copy2(src, dst)
+    return True
 
 
 def toggle_config_in_file(root_dir, key_path, value):
@@ -61,7 +98,13 @@ def toggle_config_in_file(root_dir, key_path, value):
     This is fragile but suffices for this controlled environment.
     key_path: languages.python.enabled
     """
-    config_path = root_dir / "config.toml"
+
+    config_path = get_config_path(root_dir)
+
+    # Auto-init if missing
+    if not config_path.exists():
+        load_config(root_dir)  # Triggers template copy
+
     if not config_path.exists():
         return
 
@@ -107,7 +150,7 @@ def toggle_config_in_file(root_dir, key_path, value):
         else:
             new_lines.append(line)
 
-    save_lines(config_path, new_lines)
+    save_lines(root_dir, new_lines)
 
 
 def wizard(root_dir):
@@ -129,6 +172,8 @@ def wizard(root_dir):
         print(f"LANGUAGE: {lang} (Currently: {'Enabled' if enabled else 'Disabled'})")
         if desc:
             print(f"  Description: {desc}")
+        if lang == "typescript":
+            print("  Note: Enabling TypeScript supports hybrid projects (JS + TS).")
         choice = input(f"  Enable {lang}? [Y/n]: ").strip().lower()
         if choice == "" or choice == "y":
             toggle_config_in_file(root_dir, f"languages.{lang}.enabled", True)
@@ -154,6 +199,9 @@ def wizard(root_dir):
     # 3. Shell Config
     configure_shell_env(root_dir)
 
+    # 4. Workflows
+    ensure_ade_workflows(root_dir)
+
     # Mark setup as complete
     (root_dir / ".agent_setup_complete").touch()
     print("\n✅  Configuration complete!\n")
@@ -163,7 +211,8 @@ def get_installed_extras(root_dir):
     """
     Returns a set of currently installed extra names.
     This is best-effort. We can parse 'uv pip freeze' or checking .venv/pyvenv.cfg?
-    Actually, uv doesn't explicitly store 'installed extras' metadata easily accessible without parsing.
+    Actually, uv doesn't explicitly store 'installed extras' metadata easily
+    accessible without parsing.
     Faster way: Check if the marker-dependent packages are present?
     Or: We store the last applied extras in a file .agent_last_extras
     """
@@ -223,9 +272,7 @@ def main():
     parser.add_argument("--enable-feature", action="append", help="Enable a feature")
     parser.add_argument("--disable-feature", action="append", help="Disable a feature")
     parser.add_argument("--non-interactive", action="store_true", help="Bypass prompts")
-    parser.add_argument(
-        "--check-diff", action="store_true", help="Check for dependency removals"
-    )
+    parser.add_argument("--check-diff", action="store_true", help="Check for dependency removals")
     parser.add_argument(
         "--confirm-removal",
         action="store_true",
@@ -251,6 +298,9 @@ def main():
 
     if should_run_wizard:
         wizard(root_dir)
+        ensure_docs_gen_ignored(root_dir)
+        ensure_ade_workflows(root_dir)
+        ensure_templates_installed(root_dir)
         sys.exit(0)
 
     if not is_quiet:
@@ -269,6 +319,11 @@ def main():
     if args.disable_feature:
         for feat in args.disable_feature:
             toggle_config_in_file(root_dir, f"features.{feat}.enabled", False)
+
+    # Always ensure docs/gen is ignored whenever configuration is updated
+    ensure_docs_gen_ignored(root_dir)
+    ensure_ade_workflows(root_dir)
+    ensure_templates_installed(root_dir)
 
     if args.check_diff:
         removed = check_diff(root_dir)
@@ -297,9 +352,7 @@ def configure_shell_env(root_dir):
     )
 
     choice = (
-        input(
-            "Do you want to add the Agent Environment bin directory to your PATH? [y/N]: "
-        )
+        input("Do you want to add the Agent Environment bin directory to your PATH? [y/N]: ")
         .strip()
         .lower()
     )
@@ -338,6 +391,87 @@ def configure_shell_env(root_dir):
         print(f"👉 Please run: source {rc_file}")
     except Exception as e:
         print(f"Error writing to {rc_file}: {e}")
+
+
+def ensure_templates_installed(root_dir):
+    """
+    Copies standardized templates (REQUIREMENTS.md, ISSUES.md) to docs/ if missing.
+    """
+    project_root = root_dir.parent
+    docs_dir = project_root / "docs"
+    templates_dir = root_dir / "config" / "templates"
+
+    if not docs_dir.exists():
+        docs_dir.mkdir(parents=True, exist_ok=True)
+
+    for template_name in ["REQUIREMENTS.md", "ISSUES.md"]:
+        target_path = docs_dir / template_name
+        source_path = templates_dir / template_name
+
+        if source_path.exists() and not target_path.exists():
+            # Only install if missing. Do not overwrite existing documentation.
+            if copy_if_changed(source_path, target_path):
+                print(f"Installed {template_name} to docs/")
+
+
+def ensure_ade_workflows(root_dir):
+    """
+    Links ADE workflows to .agent/workflows with an 'ade-' prefix.
+    """
+    project_root = root_dir.parent
+    agent_workflows_dir = project_root / ".agent" / "workflows"
+    source_workflows_dir = root_dir / "workflows"
+
+    if not source_workflows_dir.exists():
+        return
+
+    if not agent_workflows_dir.exists():
+        print(f"Creating {agent_workflows_dir}...")
+        agent_workflows_dir.mkdir(parents=True, exist_ok=True)
+
+    for workflow_file in source_workflows_dir.glob("*.md"):
+        target_name = workflow_file.name
+        target_path = agent_workflows_dir / target_name
+
+        # We want COPIES, not symlinks, because some agents don't follow links.
+        # If it is a symlink, remove it so we can replace with a copy.
+        if target_path.is_symlink():
+            # print(f"Removing symlink {target_name} to replace with copy...")
+            target_path.unlink()
+
+        # Copy if content differs
+        if copy_if_changed(workflow_file, target_path):
+            print(f"Installed/Updated workflow {target_name}")
+
+
+def ensure_docs_gen_ignored(root_dir):
+    """
+    Ensures that the docs/gen directory is present in the project's .gitignore.
+    """
+    project_root = root_dir.parent
+    agent_dir_entry = ".agent/\n"
+    gitignore_path = project_root / ".gitignore"
+
+    ignore_entry = "docs/gen/\n"
+
+    if gitignore_path.exists():
+        content = gitignore_path.read_text()
+        needs_write = False
+        if "docs/gen/" not in content:
+            content += f"\n# Automated Doc Generation\n{ignore_entry}"
+            needs_write = True
+        if ".agent/" not in content:
+            content += f"\n# Agent Metadata\n{agent_dir_entry}"
+            needs_write = True
+
+        if needs_write:
+            print("Updating .gitignore...")
+            gitignore_path.write_text(content)
+    else:
+        print("Creating .gitignore...")
+        gitignore_path.write_text(
+            f"# Automated Doc Generation\n{ignore_entry}\n# Agent Metadata\n{agent_dir_entry}"
+        )
 
 
 if __name__ == "__main__":

@@ -156,3 +156,4 @@ docs/gen/
 *.dot
 !docs/assets/diagrams/*.dot
 
+.agent_setup_complete

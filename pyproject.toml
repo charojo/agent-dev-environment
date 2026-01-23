@@ -1,6 +1,6 @@
 [project]
 name = "agent-dev-environment"
-version = "0.0.1"
+version = "0.0.2"
 description = "Tooling and workflows for Agentic Development"
 authors = [
     { name = "MyHeadwave LLC" },
