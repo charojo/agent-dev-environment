@@ -151,6 +151,41 @@ def count_lines_file(file_path):
 
 def run_local_analysis(root_dir, args):
     """Analyzes the current filesystem (Local Mode)."""
+    
+    # Run validation if requested
+    validation_metrics = {}
+    if args.validate:
+        print("Running full validation suite (validate.sh --full)...", file=sys.stderr)
+        try:
+            # We run validate.sh --full and capture its output
+            validate_bin = root_dir / "agent_env" / "bin" / "validate.sh"
+            if not validate_bin.exists():
+                validate_bin = root_dir / "bin" / "validate.sh"
+            
+            result = subprocess.run(
+                [str(validate_bin), "--full"],
+                cwd=root_dir,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            output = result.stdout
+            
+            # Parse metrics from "=== Detailed Metrics (ASCII) ==="
+            # Frontend   | 325 passed           | 60%        | 6s
+            # Backend    | 138 passed...        | 82%        | 18s
+            # TOTAL                               71.00% code coverage in 87s
+            
+            frontend_match = re.search(r"Frontend\s*\|[^|]*\|\s*([\d.]+)%", output)
+            backend_match = re.search(r"Backend\s*\|[^|]*\|\s*([\d.]+)%", output)
+            total_match = re.search(r"TOTAL\s*([\d.]+)%", output)
+            
+            if frontend_match: validation_metrics["Frontend"] = frontend_match.group(1)
+            if backend_match: validation_metrics["Backend"] = backend_match.group(1)
+            if total_match: validation_metrics["Total"] = total_match.group(1)
+            
+        except Exception as e:
+            print(f"Error running validation: {e}", file=sys.stderr)
 
     # Check config
     try:
@@ -226,6 +261,14 @@ def run_local_analysis(root_dir, args):
     # Config Results
     results_file = root_dir / "logs" / "config_test_results.json"
     print_config_results(results_file, markdown=args.markdown or args.dual)
+
+    # If we have validation metrics, print them
+    if validation_metrics and args.markdown:
+        print("\n### Execution Coverage (Latest)")
+        print("| Tier | Coverage % | Status |")
+        print("| :--- | :--- | :--- |")
+        for tier, cov in validation_metrics.items():
+            print(f"| {tier} | {cov}% | Verified via validate.sh |")
 
 
 def print_markdown_table_local(results, sorted_langs, metrics, keys):
@@ -323,25 +366,90 @@ def parse_existing_history(file_path):
 
     last_commit = None
     with open(file_path, "r") as f:
-        # We look for the FIRST data row since we output essentially reverse chronological usually?
-        # Actually our script appends or rewrites.
-        # If we append to history, we need to know the TOP of the history if it's descending.
-        # But usually history log is descending (newest top).
-        # Let's read line by line.
         for line in f:
-            # Matches: | YYYY-MM-DD | `hash` | ...
             m = re.search(r"\|\s*\d{4}-\d{2}-\d{2}\s*\|\s*`([^`]+)`", line)
             if m:
-                # If we assume the file is sorted newest-first,
-                # the first match is the latest commit tracked.
-                # However, if we append new commits to the file,
-                # we might be prepending or rewriting.
-                # If the user asks for incremental, we likely want to catch up
-                # from the *newest known* commit to HEAD.
                 last_commit = m.group(1)
-                # We can stop at the first one found if the list is ordered Newest -> Oldest
                 break
     return last_commit
+
+
+def parse_requirements_content(content):
+    """Counts total and open requirements from markdown content."""
+    total = 0
+    open_reqs = 0
+    # Look for table rows starting with | **REQ-
+    lines = content.splitlines()
+    for line in lines:
+        if re.search(r"\|\s*\*\*REQ-\d+\*\*", line):
+            total += 1
+            # Check Status column (index 2 usually)
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) > 3:
+                status = parts[3].lower()
+                # Open if Planned, Partial, Designed, or In Progress
+                if any(s in status for s in ["planned", "partial", "designed", "in progress"]):
+                    open_reqs += 1
+    return open_reqs, total
+
+
+def parse_issues_content(content):
+    """Counts total and open issues from markdown content."""
+    total = 0
+    open_issues = 0
+    # Look for table rows starting with | **CR- / **HP- / **LP- / **DS- / **DX- / **DEF- / **SEC- / **TASK- / **TECH-
+    lines = content.splitlines()
+    for line in lines:
+        if re.search(r"\|\s*\*\*(?:CR|HP|LP|DS|DX|DEF|SEC|TASK|TECH)-", line):
+            total += 1
+            # Check Status column
+            parts = [p.strip().lower() for p in line.split("|")]
+            # Search for status in columns 2-5
+            is_closed = any(any(s in col for s in ["fixed", "resolved", "done", "complete", "✅"]) for col in parts[2:6])
+            if not is_closed:
+                open_issues += 1
+    return open_issues, total
+
+
+def parse_data_row(line):
+    """Parses a markdown table row into a data dictionary."""
+    parts = [p.strip() for p in line.split("|")]
+    # Expected: ['', Date, Commit, Author, Total, Py, TS, MD, CSS, SH, JSON, TestFiles, TestLOC, TP, TT, TS, TODOs, FIXMEs, Req, Iss, '']
+    if len(parts) < 20:
+        return None
+
+    try:
+        # Extract date from | YYYY-MM-DD |
+        date = parts[1]
+        if not re.match(r"\d{4}-\d{2}-\d{2}", date):
+            return None
+
+        return {
+            "date": date,
+            "loc_total": int(parts[4]),
+            "loc_py": int(parts[5]),
+            "loc_ts": int(parts[6]),
+            "loc_md": int(parts[7]),
+            "loc_css": int(parts[8]),
+            "loc_sh": int(parts[9]),
+            "loc_json": int(parts[10]),
+            "test_files": int(parts[11]),
+            "test_loc_total": int(parts[12]),
+            "test_loc_py": int(parts[13]),
+            "test_loc_ts": int(parts[14]),
+            "test_loc_sh": int(parts[15]),
+            # Markers in the new table are split Format: "Code / MD"
+            "todos": int(parts[16].split("/")[0]),
+            "md_todos": int(parts[16].split("/")[1]),
+            "fixmes": int(parts[17].split("/")[0]),
+            "md_fixmes": int(parts[17].split("/")[1]),
+            "open_reqs": int(parts[18].split("/")[0]),
+            "total_reqs": int(parts[18].split("/")[1]),
+            "open_issues": int(parts[19].split("/")[0]),
+            "total_issues": int(parts[19].split("/")[1]),
+        }
+    except (ValueError, IndexError):
+        return None
 
 
 def run_history_analysis(root_dir, args):
@@ -417,8 +525,11 @@ def run_history_analysis(root_dir, args):
             "commit": commit["hash"][:7],
             "date": commit["date"],
             "author": commit["author"],
+            "author": commit["author"],
             "todos": 0,
             "fixmes": 0,
+            "md_todos": 0,
+            "md_fixmes": 0,
             # Source code LOC (non-test)
             "loc_python": 0,
             "loc_typescript": 0,
@@ -433,9 +544,21 @@ def run_history_analysis(root_dir, args):
             "test_loc_shell": 0,
             "test_loc_total": 0,
             "test_files": 0,
+            "open_reqs": 0,
+            "total_reqs": 0,
+            "open_issues": 0,
+            "total_issues": 0,
         }
 
         for file_path in files:
+            # Special Handling for Requirements and Issues
+            if file_path == "docs/REQUIREMENTS.md":
+                content = get_file_content_git(cwd, commit["hash"], file_path)
+                stats["open_reqs"], stats["total_reqs"] = parse_requirements_content(content)
+            elif file_path == "docs/ISSUES.md":
+                content = get_file_content_git(cwd, commit["hash"], file_path)
+                stats["open_issues"], stats["total_issues"] = parse_issues_content(content)
+
             ext = os.path.splitext(file_path)[1]
             if ext not in lang_map:
                 continue
@@ -443,10 +566,13 @@ def run_history_analysis(root_dir, args):
             content = get_file_content_git(cwd, commit["hash"], file_path)
             loc, todos, fixmes = analyze_content(content)
 
-            stats["todos"] += todos
-            stats["fixmes"] += fixmes
-
             lang = lang_map[ext]
+            if lang == "markdown":
+                stats["md_todos"] += todos
+                stats["md_fixmes"] += fixmes
+            else:
+                stats["todos"] += todos
+                stats["fixmes"] += fixmes
             is_test = is_test_file(file_path)
 
             if is_test:
@@ -488,11 +614,18 @@ def run_history_analysis(root_dir, args):
     # Generate Report Rows
     new_rows = []
     for row in history_data:
+        # Table Includes BOTH (C / M)
+        todo_str = f"{row['todos']} / {row['md_todos']}"
+        fixme_str = f"{row['fixmes']} / {row['md_fixmes']}"
+        req_str = f"{row['open_reqs']} / {row['total_reqs']}"
+        iss_str = f"{row['open_issues']} / {row['total_issues']}"
         new_rows.append(
             f"| {row['date']} | `{row['commit']}` | {row['author']} | "
             f"{row['loc_total']} | {row['loc_python']} | {row['loc_typescript']} | "
             f"{row['loc_markdown']} | {row['loc_css']} | {row['loc_shell']} | {row['loc_json']} | "
-            f"{row['test_files']} | {row['todos']} | {row['fixmes']} |"
+            f"{row['test_files']} | {row['test_loc_total']} | {row['test_loc_python']} | "
+            f"{row['test_loc_typescript']} | {row['test_loc_shell']} | {todo_str} | {fixme_str} | "
+            f"{req_str} | {iss_str} |"
         )
 
     # COMBINING
@@ -502,17 +635,14 @@ def run_history_analysis(root_dir, args):
         final_output.append(f"Generated on {datetime.now().isoformat()}")
         final_output.append("")
         final_output.append(
-            "| Date | Commit | Author | Total LOC | Py LOC | TS/JS LOC | MD LOC | "
-            "CSS LOC | SH LOC | JSON LOC | Tests | TODOs | NEEDS_FIX |"
+            "| Date | Commit | Author | Total | Py | TS/JS | MD | CSS | SH | JSON | Tests | T-LOC | Py-T | TS-T | SH-T | TODO (C/M) | FIXME (C/M) | Req | Iss |"
         )
-        final_output.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+        final_output.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         final_output.extend(new_rows)
     else:
         # We need to insert new rows after the header.
-        # Assuming header ends at line starting with |---|
-        # We assume existing_content is Lines.
-
-        # Heuristic: Find the separator line
+        # Heuristic: Find the separator line for the main table
+        # We skip any charts/summaries that were already at the top
         sep_index = -1
         for i, line in enumerate(existing_content):
             if line.strip().startswith("|---"):
@@ -520,22 +650,51 @@ def run_history_analysis(root_dir, args):
                 break
 
         if sep_index != -1:
-            # Header is up to sep_index
-            final_output.extend(link.strip() for link in existing_content[: sep_index + 1])
-            # Insert NEW rows (assuming they are newer than what is in file)
+            # We want to REBUILD the part BEFORE the table to have valid current summaries/charts
+            # but we keep the table rows.
+            final_output.append("# Project History Analysis")
+            final_output.append(f"Generated on {datetime.now().isoformat()}")
+            final_output.append("")
+            # Charts will be inserted at index 2 later
+
+            # The header is actually 1 line before sep_index
+            header_line = "| Date | Commit | Author | Total | Py | TS/JS | MD | CSS | SH | JSON | Tests | T-LOC | Py-T | TS-T | SH-T | TODO (C/M) | FIXME (C/M) | Req | Iss |"
+            sep_line = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+
+            final_output.append(header_line)
+            final_output.append(sep_line)
+
+            # Insert NEW rows
             final_output.extend(new_rows)
             # Append old rows
-            final_output.extend(link.strip() for link in existing_content[sep_index + 1 :])
+            final_output.extend(line.strip() for line in existing_content[sep_index + 1 :])
         else:
             # Could not find table structure, just append?
-            final_output.extend(link.strip() for link in existing_content)
+            final_output.extend(line.strip() for line in existing_content)
             final_output.extend(new_rows)
 
     # Sort data for graphing (Oldest -> Newest)
-    # Build graph data directly from history_data instead of parsing markdown
+    # Build graph data by combining parsed existing data and newly processed data
     daily_data = {}
+
+    # 1. Parse existing data from file if available
+    if existing_content:
+        for line in existing_content:
+            row_data = parse_data_row(line)
+            if row_data:
+                # Since we often have multiple commits per day, we store the LATEST state of that day
+                # Existing file is usually Newest -> Oldest, so first one we see is the latest for that date
+                date = row_data["date"]
+                if date not in daily_data:
+                    # In existing table, todos/fixmes already include MD markers
+                    # We can't easily separate them for old rows, so we'll just use them as is
+                    # Newer runs will have the separation in history_data
+                    daily_data[date] = row_data
+
+    # 2. Add newly processed data
     for row in history_data:
         date = row["date"]
+        # History data from log is also usually Newest -> Oldest
         if date not in daily_data:
             daily_data[date] = {
                 "date": date,
@@ -549,8 +708,16 @@ def run_history_analysis(root_dir, args):
                 "test_loc_py": row["test_loc_python"],
                 "test_loc_ts": row["test_loc_typescript"],
                 "test_loc_sh": row["test_loc_shell"],
+                # FOR GRAPHS: We only include code markers (exclude MD)
+                # But for the table, we'll sum them below
                 "todos": row["todos"],
                 "fixmes": row["fixmes"],
+                "md_todos": row["md_todos"],
+                "md_fixmes": row["md_fixmes"],
+                "open_reqs": row["open_reqs"],
+                "total_reqs": row["total_reqs"],
+                "open_issues": row["open_issues"],
+                "total_issues": row["total_issues"],
             }
 
     graph_data = list(daily_data.values())
@@ -732,12 +899,103 @@ def run_history_analysis(root_dir, args):
         loc_growth = end_loc - start_loc
         avg_lines_per_day = loc_growth / days
 
+        # --- SUMMARY TABLES ---
+        latest = graph_data[-1]
+
+        def calc_cov(test, source):
+            total = test + source
+            if total == 0:
+                return 0.0
+            return (test / total) * 100.0
+
+        py_ratio = calc_cov(latest["test_loc_py"], latest["loc_py"])
+        ts_ratio = calc_cov(latest["test_loc_ts"], latest["loc_ts"])
+        sh_ratio = calc_cov(latest["test_loc_sh"], latest["loc_sh"])
+        total_ratio = calc_cov(latest["test_loc_total"], latest["loc_total"])
+
         summary_section = [
             "## Summary",
             f"- **Analysis Period**: {start_date_str} to {end_date_str} ({days} days)",
             f"- **Total Growth**: {loc_growth:+,} LOC",
-            f"- **Avg Metrics**: {avg_lines_per_day:+.2f} Lines/Day",
+            "",
         ]
+
+        # 1. Execution Coverage (MOVED TO TOP)
+        val_summary = root_dir / "logs" / "validation_summary_log.md"
+        if val_summary.exists():
+            try:
+                with open(val_summary, "r") as f:
+                    content = f.read()
+                    # Parse Coverage
+                    m_cov = re.search(r"TOTAL\s*([\d.]+)%", content)
+                    # Parse Timings
+                    timings = []
+                    for line in content.splitlines():
+                        if "TIMING_METRIC:" in line:
+                            # TIMING_METRIC: Backend=18s
+                            m_time = re.search(r"TIMING_METRIC:\s*([^=]+)=([\d.]+)s", line)
+                            if m_time:
+                                timings.append((m_time.group(1), m_time.group(2)))
+
+                    if m_cov:
+                        summary_section.extend([
+                            "### Execution Coverage (Latest)",
+                            "| Type | Coverage % | Source |",
+                            "| :--- | :--- | :--- |",
+                            f"| **Overall** | **{m_cov.group(1)}%** | `validate.sh --full` |",
+                            "",
+                            "> [!TIP]",
+                            "> Dynamic execution coverage measures which lines of code were actually run during tests.",
+                            ""
+                        ])
+
+                    if timings:
+                        summary_section.extend([
+                            "### Verification Timings",
+                            "| Phase | Duration |",
+                            "| :--- | :--- |",
+                        ])
+                        for phase, duration in timings:
+                            if phase != "Total":  # Put total last or separately
+                                summary_section.append(f"| {phase} | {duration}s |")
+                        
+                        # Find Total
+                        total_time = next((d for p, d in timings if p == "Total"), "N/A")
+                        summary_section.extend([
+                            f"| **Total** | **{total_time}s** |",
+                            ""
+                        ])
+            except Exception:
+                pass
+
+        # 2. Test Density Analysis
+        summary_section.extend([
+            "### Test Density Analysis (Latest)",
+            "| Language | Source LOC | Test LOC | Density % |",
+            "| :--- | :--- | :--- | :--- |",
+            f"| Python | {latest['loc_py']:,} | {latest['test_loc_py']:,} | {py_ratio:.1f}% |",
+            f"| TS/JS | {latest['loc_ts']:,} | {latest['test_loc_ts']:,} | {ts_ratio:.1f}% |",
+            f"| Shell | {latest['loc_sh']:,} | {latest['test_loc_sh']:,} | {sh_ratio:.1f}% |",
+            f"| **Total** | **{latest['loc_total']:,}** | **{latest['test_loc_total']:,}** | **{total_ratio:.1f}%** |",
+            "",
+            "> [!NOTE]",
+            "> **Test Density** is a static LOC ratio (Test Code / Production Code).",
+            "",
+        ])
+
+        # 3. Technical Debt
+        summary_section.extend([
+            "### Technical Debt (Latest)",
+            "| Category | Progress / Count | Status |",
+            "| :--- | :--- | :--- |",
+            f"| Requirements | {latest['total_reqs'] - latest['open_reqs']} / {latest['total_reqs']} | {latest['open_reqs']} Pending |",
+            f"| Issues | {latest['total_issues'] - latest['open_issues']} / {latest['total_issues']} | {latest['open_issues']} Open |",
+            f"| TODOs | {latest['todos']} | {latest['todos']} code markers shown in graph |",
+            f"| FIXMEs | {latest['fixmes']} | {latest['fixmes']} code markers shown in graph |",
+            "> [!NOTE]",
+            "> Markdown markers (TODO/FIXME) excluded from debt chart. Requirements and Issues tracked via `REQUIREMENTS.md` and `ISSUES.md` respectively.",
+            "",
+        ])
         charts.extend(summary_section)
         charts.append("")  # Spacer
 
@@ -878,6 +1136,11 @@ def main():
         "--dual",
         action="store_true",
         help="Output Markdown to stdout and ASCII to stderr (Local mode)",
+    )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Run validate.sh --full and include results in report",
     )
 
     args = parser.parse_args()
