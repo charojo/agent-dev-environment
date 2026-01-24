@@ -114,14 +114,14 @@ def analyze_content(content):
 def is_test_file(file_path):
     """Check if a file looks like a test file."""
     fp = file_path.lower()
-    parts = fp.split(os.sep)
+    basename = os.path.basename(fp)
+    parts = set(fp.split(os.sep))
     return (
-        "test" in parts
-        or "tests" in parts
-        or fp.startswith("test_")
-        or fp.endswith("_test.py")
+        not parts.isdisjoint({"test", "tests", "__tests__"})
+        or basename.startswith("test_")
+        or basename.endswith("_test.py")
         or any(
-            fp.endswith(ext)
+            basename.endswith(ext)
             for ext in [
                 ".test.js",
                 ".test.jsx",
