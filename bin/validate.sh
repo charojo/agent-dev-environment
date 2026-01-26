@@ -116,6 +116,7 @@ ${YELLOW}Usage:${NC} ./bin/validate.sh [tier] [options]
 ${YELLOW}Tiers:${NC}
   --${GREEN}screen${NC} System Health + Crash Smoke Test (15s)
   --${GREEN}fast${NC}   Screen + Unit tests for CHANGED code + Auto-fix (40s)
+  --${BLUE}frontend${NC} Auto-fix + All Frontend Unit Tests (20s)
   --${YELLOW}e2e${NC}    Screen + Auto-fix + Full E2E Suite (35s)
   --${BLUE}full${NC}   E2E + All Unit Tests + Coverage (75s)
   --${RED}exhaustive${NC} Full + Parallel Execution + Mutation Testing (5m)
@@ -156,6 +157,7 @@ while [[ $# -gt 0 ]]; do
         --exhaustive) TIER="exhaustive"; shift ;;
         --fast) TIER="fast"; shift ;;
         --screen) TIER="screen"; shift ;;
+        --frontend) TIER="frontend"; shift ;;
         --live) INCLUDE_LIVE=true; shift ;;
         --debug) VERBOSE=true; PARALLEL=false; shift ;;
         --e2e) TIER="e2e"; shift ;;
@@ -204,6 +206,10 @@ case "$TIER" in
     screen)
         # Smoke only: skip everything except Phase 0/0.5
         INCLUDE_E2E=false # Full E2E suite skipped, but Phase 0.5 handles smoke
+        ;;
+    frontend)
+        # Frontend: auto-fix, frontend tests only
+        INCLUDE_E2E=false
         ;;
     e2e)
         # E2E: auto-fix, E2E tests only
@@ -350,7 +356,7 @@ fi
 ## @fn run_system_checks
 # Performs critical startup and compliance checks.
 run_system_checks() {
-    if [ "$TIER" = "e2e" ] || [ "$TIER" = "exhaustive" ]; then
+    if [ "$TIER" = "e2e" ] || [ "$TIER" = "exhaustive" ] || [ "$TIER" = "frontend" ]; then
         return
     fi
 
@@ -388,7 +394,7 @@ run_system_checks() {
 ## @fn run_smoke_test
 # Runs a lightweight E2E smoke test to detect frontend crashes.
 run_smoke_test() {
-    if [ "$TIER" = "e2e" ] || [ "$TIER" = "exhaustive" ]; then
+    if [ "$TIER" = "e2e" ] || [ "$TIER" = "exhaustive" ] || [ "$TIER" = "frontend" ]; then
         return
     fi
     
@@ -456,7 +462,7 @@ run_backend_tests() {
         return
     fi
 
-    if [ "$TIER" = "screen" ] || [ "$TIER" = "e2e" ] || [ "$TIER" = "exhaustive" ]; then
+    if [ "$TIER" = "screen" ] || [ "$TIER" = "e2e" ] || [ "$TIER" = "exhaustive" ] || [ "$TIER" = "frontend" ]; then
         log_msg "${YELLOW}Skipping backend (tier: $TIER)${NC}"
         return
     fi
@@ -575,6 +581,9 @@ run_frontend_tests() {
     
     cd src/web
     
+    # 0. Clean up any previous orphan processes
+    npm run test:clean > /dev/null 2>&1 || true
+    
     local vitest_args=""
     
     case "$TIER" in
@@ -603,6 +612,11 @@ run_frontend_tests() {
             elif [ "$TIER" = "full" ] && [ "$INCLUDE_E2E" = false ]; then
                  vitest_args="--coverage"
             fi
+            ;;
+        frontend)
+            echo "Selection: All tests"
+            # No coverage to keep it fast
+            vitest_args=""
             ;;
     esac
     
@@ -665,7 +679,9 @@ run_e2e_tests() {
         return
     fi
     if [ "$TIER" != "e2e" ] && [ "$TIER" != "full" ] && [ "$TIER" != "exhaustive" ]; then
-        export E2E_SKIP_SMOKE=true
+        if [ -z "$E2E_FILTER" ]; then
+            export E2E_SKIP_SMOKE=true
+        fi
     fi
 
     echo -e "${BLUE}Starting servers and running browser tests (this may take 1-2 minutes)...${NC}"
@@ -711,7 +727,7 @@ run_e2e_tests() {
 # Phase 5: Static Analysis
 # ============================================
 run_static_analysis() {
-    if [ "$TIER" = "fast" ] || [ "$TIER" = "screen" ] || [ "$TIER" = "e2e" ]; then
+    if [ "$TIER" = "fast" ] || [ "$TIER" = "screen" ] || [ "$TIER" = "e2e" ] || [ "$TIER" = "frontend" ]; then
         return
     fi
 
@@ -776,6 +792,7 @@ print_summary() {
     local tier_desc
     case "$TIER" in
         fast) tier_desc="Fast (LOC-only)" ;;
+        frontend) tier_desc="Frontend (unit tests)" ;;
         full) tier_desc="Full (all tests)" ;;
         exhaustive) tier_desc="Exhaustive (max coverage)" ;;
     esac
@@ -826,6 +843,16 @@ print_summary() {
 # ============================================
 # Main Execution
 # ============================================
+# Fast Path for targeted E2E selection
+if [ -n "$E2E_FILTER" ]; then
+    log_msg "${BLUE}=== Fast Path: Targeted E2E Selection ===${NC}"
+    INCLUDE_E2E=true
+    run_system_checks || { echo -e "${RED}System health checks failed${NC}"; exit 1; }
+    run_e2e_tests || { echo -e "${RED}E2E tests failed${NC}"; exit 1; }
+    print_summary
+    exit 0
+fi
+
 run_system_checks || { echo -e "${RED}System health checks failed${NC}"; exit 1; }
 run_smoke_test || { echo -e "${RED}Frontend smoke test failed${NC}"; exit 1; }
 

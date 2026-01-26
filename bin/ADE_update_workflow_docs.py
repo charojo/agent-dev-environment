@@ -2,8 +2,8 @@
 import re
 from pathlib import Path
 
-WORKFLOWS_DIR = Path("workflows")
-DOCS_FILE = Path("docs/HOWTO_UseAgentDev.md")
+WORKFLOWS_DIR = Path(".agent/workflows")
+DOCS_FILE = Path("docs/manual/HOWTO_Develop.md")
 
 
 def get_workflows():

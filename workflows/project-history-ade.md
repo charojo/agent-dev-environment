@@ -14,37 +14,20 @@ It generates a report containing statistics for each commit, including Lines of 
 
 ## Usage
 
-### History Analysis
-
-Run the script to analyze git history:
+Run the analysis script directly from the bin directory (or your PATH if configured):
 
 ```bash
-# Analyze the last 10 commits
-python3 agent_env/bin/ADE_project_history.py --limit 10
-
-# Analyze history incrementally (append new commits to existing report)
-python3 agent_env/bin/ADE_project_history.py --output history_report.md --incremental
-
-# Analyze everything since a specific commit
-python3 agent_env/bin/ADE_project_history.py --since <commit-hash>
-```
-
-### Local Snapshot
-
-Run the script to analyze the *current* state of the filesystem (ignoring git history):
-
-```bash
-python3 agent_env/bin/ADE_project_history.py --analyze-local
+# Analyze the entire history
+python3 agent_env/bin/ADE_project_history.py
 ```
 
 ## Options
 
-- `--analyze-local`: Analyze current filesystem state instead of history.
-- `--incremental`: Append new commits to an existing output file (requires `--output`).
-- `--since <HASH>`: Analyze commits starting after the specified hash.
 - `--limit <N>`: Limit the analysis to the most recent N commits.
 - `--reverse`: Analyze in reverse chronological order (oldest first).
-- `--output <FILE>`: Save the Markdown report to the specified file.
+- `--since <HASH>`: Analyze commits since this hash.
+- `--incremental`: Append new commits to existing `history.md`.
+- `--analyze-local`: Analyze the current filesystem state (Local Mode).
 
 ## Output Format
 
@@ -57,21 +40,16 @@ The output is a Markdown table with the following columns:
 - **Py LOC**: Python lines of code
 - **TS/JS LOC**: TypeScript and JavaScript lines of code
 - **MD LOC**: Markdown lines of code
+- **CSS LOC**: CSS lines of code
+- **SH LOC**: Shell script lines of code
+- **JSON LOC**: JSON data lines of code
 - **Tests**: Number of test files detected
 - **TODOs**: Count of "TODO" markers
 - **NEEDS_FIX**: Count of "FIXME" markers
 
-## Charts
-
-When running in history mode with `--output`, the script automatically generates SVG charts for:
-1. **Lines of Code over Time**: Visualizes the growth of the codebase by language.
-2. **Technical Debt Markers**: visualizes the trend of `TODO` and `FIXME` counts.
-
-These charts are saved in a `_assets` directory next to the output report and linked within the Markdown.
-
 ## Example Report
 
-| Date | Commit | Author | Total LOC | Py LOC | TS/JS LOC | MD LOC | Tests | TODOs | NEEDS_FIX |
-|---|---|---|---|---|---|---|---|---|---|
-| 2024-01-15 | `a1b2c3d` | Alice Dev | 1500 | 800 | 400 | 300 | 12 | 5 | 2 |
-| 2024-01-14 | `x9y8z7w` | Bob Engineer | 1450 | 780 | 390 | 280 | 11 | 4 | 2 |
+| Date | Commit | Author | Total LOC | Py LOC | TS/JS LOC | MD LOC | CSS LOC | SH LOC | JSON LOC | Tests | TODOs | NEEDS_FIX |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2024-01-15 | `a1b2c3d` | Alice Dev | 1500 | 800 | 400 | 300 | 100 | 20 | 50 | 12 | 5 | 2 |
+| 2024-01-14 | `x9y8z7w` | Bob Engineer | 1450 | 780 | 390 | 280 | 90 | 15 | 45 | 11 | 4 | 2 |

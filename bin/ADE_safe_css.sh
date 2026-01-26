@@ -27,6 +27,21 @@ if [ $HEALTH_STATUS -ne 0 ]; then
 fi
 
 echo ""
+echo "🔍 Running CSS Compliance Checks..."
+"$SCRIPT_DIR/ADE_check_css_compliance.py"
+COMPLIANCE_STATUS=$?
+
+if [ $COMPLIANCE_STATUS -ne 0 ]; then
+    echo -e "${RED}❌ CSS Compliance Check Failed.${NC}"
+    # We don't exit here immediately if we want to run visual tests too, 
+    # but strictly "Safe CSS" implies compliance is required.
+    # Let's run visual tests anyway to get full picture? 
+    # Or fail fast? User said "Keep running it until it flags...". 
+    # Usually safer to fail.
+    exit 1
+fi
+
+echo ""
 echo "🎨 Running Visual Regression Tests..."
 
 # 2. Run Specific CSS Safety Tests in Project Root

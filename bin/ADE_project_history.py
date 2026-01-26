@@ -467,7 +467,7 @@ def run_history_analysis(root_dir, args):
     existing_content = []
 
     # Hardcoded output path in docs/
-    output_path = root_dir / "docs" / "history.md"
+    output_path = root_dir / "docs" / "HISTORY.md"
     # Ensure docs directory exists
     output_path.parent.mkdir(exist_ok=True)
 
