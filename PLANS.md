@@ -57,6 +57,5 @@ tests/
 ## References
 
 - [Project Automation Feature](docs/features/project_automation.md)
-- [1099 Example Project](docs/features/project_automate_1099.md)
 - [REQUIREMENTS.md](REQUIREMENTS.md)
 - [ISSUES.md](ISSUES.md)

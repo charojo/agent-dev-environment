@@ -85,7 +85,7 @@ def main():
     args = parser.parse_args()
 
     # Determine project root
-    # Valid assumption: this script is in bin/, so root is one level up
+    # Valid assumption: this script is in bin/, so root is two levels up
     root_dir = Path(__file__).resolve().parent.parent
     config = load_config(root_dir)
 

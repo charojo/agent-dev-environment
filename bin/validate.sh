@@ -77,7 +77,6 @@ PARALLEL=false       # Parallel test execution
 VERBOSE=false        # Detailed output
 E2E_FILTER=""        # Filter for specific E2E test
 INITIALIZING=false   # Internal flag for missing coverage
-REFRESHING=false     # Internal flag for outdated coverage
 PYTEST_SELECTION=""  # Centralized selection args
 RUN_CONFIG_TESTS=false # Run configuration validation tests
 UPDATE_SNAPSHOTS=false # Flag to update E2E snapshots
@@ -272,9 +271,8 @@ E2E_PASSED=0
 E2E_FAILED=0
 
 # Check for initial run or clean environment BEFORE tier specific logic
-INITIAL_CLEAN=false
 if [[ ! -f "$TESTMON_DATAFILE" ]] || [[ ! -f "$COVERAGE_FILE" ]]; then
-    INITIAL_CLEAN=true
+    INITIALIZING=true
 fi
 
 # Initialize Log File with Markdown Header
@@ -286,17 +284,8 @@ log_msg ""
 # Echo to stdout as well (formatted for terminal)
 echo -e "${BLUE}Validation Suite${NC} - Tier: ${TIER}"
 
-if [ "$INITIAL_CLEAN" = true ]; then
-    log_msg "${YELLOW}Initial run or clean environment detected: This may take 1-3 minutes...${NC}"
-    log_msg "${BLUE}Note: We are building the test/coverage metadata for the first time.${NC}"
-    echo "> **Note:** Initial run detected. Building metadata..." >> "$LOG_FILE"
-fi
-
-log_msg ""
-
 # Centralized Test Selection Logic
 # Load Configuration via config_utils.py
-ENABLED_MARKERS=""
 CONFIG_UTILS=""
 if [ -f "agent_env/bin/ADE_config_utils.py" ]; then
     CONFIG_UTILS="agent_env/bin/ADE_config_utils.py"
@@ -305,10 +294,11 @@ elif [ -f ".agent/bin/ADE_config_utils.py" ]; then
 fi
 
 # Load Configuration via ADE_config_utils.py
-ENABLED_MARKERS=""
+PYTEST_SELECTION=""
 if [ -n "$CONFIG_UTILS" ]; then
     # We use python to get the marker string e.g. -m "not processing"
-    ENABLED_MARKERS=$(uv run python "$CONFIG_UTILS" get-markers)
+    PYTEST_SELECTION="$PYTEST_SELECTION $(uv run python "$CONFIG_UTILS" get-markers)"
+
     # Also check if python is enabled? If python is disabled, we shouldn't run backend tests at all.
     PYTHON_ENABLED=$(uv run python "$CONFIG_UTILS" get languages.python.enabled)
     JS_ENABLED=$(uv run python "$CONFIG_UTILS" get languages.typescript.enabled)
@@ -318,43 +308,33 @@ fi
 if [ -z "$PYTHON_ENABLED" ]; then PYTHON_ENABLED="true"; fi
 if [ -z "$JS_ENABLED" ]; then JS_ENABLED="true"; fi
 
+if [ "$INITIALIZING" = true ]; then
+    log_msg "${YELLOW}Initial run or clean environment detected: This may take 1-3 minutes...${NC}"
+    log_msg "${BLUE}Note: We are building the test/coverage metadata for the first time.${NC}"
+    log_msg ""
+    echo "> **Note:** Initial run detected. Building coverage data..." >> "$LOG_FILE"
+    PYTEST_SELECTION="$PYTEST_SELECTION --testmon -v"
+fi
 
 if [[ "$TIER" == "fast" ]]; then
-    if [[ ! -f "$TESTMON_DATAFILE" ]]; then
-        log_msg "${YELLOW}🚀 Initializing Test Ecosystem... Building testmon database...${NC}"
-        log_msg "${BLUE}Note: This initial scan maps your codebase to tests. It may take 1-3 minutes but speeds up future runs dramatically!${NC}"
+    # Check if tests are newer than data
+    test_changes=$(find tests/ -name "*.py" -newer "$TESTMON_DATAFILE" 2>/dev/null | wc -l)
+    if [[ "$test_changes" -gt 0 ]]; then
+        log_msg "${YELLOW}🔄 New test files detected: Refreshing testmon database...${NC}"
         INITIALIZING=true
-        PYTEST_SELECTION="--testmon"
     else
-        # Check if tests are newer than data
-        test_changes=$(find tests/ -name "*.py" -newer "$TESTMON_DATAFILE" 2>/dev/null | wc -l)
-        if [[ "$test_changes" -gt 0 ]]; then
-            log_msg "${YELLOW}🔄 New test files detected: Refreshing testmon database...${NC}"
-            REFRESHING=true
-            PYTEST_SELECTION="--testmon"
-        else
-            log_msg "Selection: LOC-only (testmon)"
-            PYTEST_SELECTION="--testmon --testmon-forceselect"
-        fi
+        log_msg "Selection: LOC-change-only based testing (testmon)"
+        PYTEST_SELECTION="$PYTEST_SELECTION --testmon-forceselect"
     fi
+
     # Always exclude E2E from non-full tiers
     PYTEST_SELECTION="$PYTEST_SELECTION -m \"not e2e\""
-elif [[ "$TIER" == "full" ]]; then
-    log_msg "Selection: All tests"
-    PYTEST_SELECTION=""
-elif [[ "$TIER" == "exhaustive" ]]; then
-    log_msg "Selection: All tests (parallel)"
-    PYTEST_SELECTION="-n auto"
 fi
 
-# Append Feature Markers (e.g., "not processing") safely
-if [ -n "$ENABLED_MARKERS" ]; then
-    # If selection already has -m, we need to combine them carefully.
-    # Pytest allows multiple -m but boolean logic is safer inside quotes? using multiple -m works as AND usually.
-    # Actually, let's just append.
-    PYTEST_SELECTION="$PYTEST_SELECTION $ENABLED_MARKERS"
+# Parallel override
+if [ "$PARALLEL" = true ]; then
+    PYTEST_SELECTION="$PYTEST_SELECTION -n auto"
 fi
-
 
 # ============================================
 # Phase 0: System Health & Compliance
@@ -479,13 +459,18 @@ run_backend_tests() {
     
     local start=$(date +%s)
     
-    local pytest_args=""
+    local pytest_args="-v --timeout=300"
     
+    # Add verbosity
+    if [ "$VERBOSE" = true ]; then
+        pytest_args="$pytest_args -vv -s"
+    fi
+
     # Selection already computed upfront
     # CRITICAL: Ignore tests/validation and environment submodules/directories
     # to prevent double-execution, deadlocks, and infinite recursion in projects.
-    # Hmmm, why ignore these? --ignore=tests/validation --ignore=agent_env
-    pytest_args="$PYTEST_SELECTION  --ignore=.agent"
+    # --ignore=tests/validation 
+    pytest_args="$pytest_args $PYTEST_SELECTION --ignore=.agent --ignore=agent_env"
     
     # Add marker for live tests
     if [ "$INCLUDE_LIVE" = false ]; then
@@ -498,21 +483,7 @@ run_backend_tests() {
             pytest_args="$pytest_args --cov=src --cov-report=term-missing"
         fi
     fi
-    
-    # Add verbosity
-    if [ "$VERBOSE" = true ]; then
-        pytest_args="$pytest_args -vv -s --timeout=300"
-    elif [ "$TIER" != "exhaustive" ]; then
-        pytest_args="$pytest_args -q --timeout=300"
-    else
-        pytest_args="$pytest_args --timeout=300"
-    fi
-    
-    # Parallel override
-    if [ "$PARALLEL" = true ] && [ "$TIER" != "exhaustive" ]; then
-        pytest_args="$pytest_args -n auto"
-    fi
-    
+           
     # Run tests with streaming output
     local output_tmp="logs/backend_output.tmp"
     log_msg "Command: uv run pytest $pytest_args"
@@ -632,6 +603,11 @@ run_frontend_tests() {
             vitest_args=""
             ;;
     esac
+
+    # Add verbosity for initial runs
+    if [[ "$INITIALIZING" == "true" || "$VERBOSE" == "true" ]]; then
+        vitest_args="$vitest_args --reporter=verbose"
+    fi
     
     # Run tests with real-time feedback
     local output_tmp="../../logs/frontend_output.tmp"
