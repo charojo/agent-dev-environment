@@ -32,7 +32,9 @@ except ImportError:
 def run_git_command(args, cwd):
     """Run a git command and return the output."""
     try:
-        result = subprocess.run(["git"] + args, cwd=cwd, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ["git"] + args, cwd=cwd, capture_output=True, text=True, check=True
+        )
         return result.stdout.strip()
     except subprocess.CalledProcessError:
         # print(f"Error running git command: {e}", file=sys.stderr)
@@ -60,7 +62,12 @@ def get_commits(cwd, limit=None, since_commit=None):
         parts = line.split("|", 3)
         if len(parts) == 4:
             commits.append(
-                {"hash": parts[0], "date": parts[1], "author": parts[2], "subject": parts[3]}
+                {
+                    "hash": parts[0],
+                    "date": parts[1],
+                    "author": parts[2],
+                    "subject": parts[3],
+                }
             )
     return commits
 
@@ -232,7 +239,12 @@ def run_local_analysis(root_dir, args):
         filename = os.path.basename(file_rel_path)
 
         # Skip common lock files
-        if filename in ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "poetry.lock"]:
+        if filename in [
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "poetry.lock",
+        ]:
             continue
 
         _, ext = os.path.splitext(file_rel_path)
@@ -282,7 +294,11 @@ def print_markdown_table_local(results, sorted_langs, metrics, keys):
             return "JSON"
         return lang.title()
 
-    header = "| Metric | " + " | ".join([format_lang(lang) for lang in sorted_langs]) + " | Total |"
+    header = (
+        "| Metric | "
+        + " | ".join([format_lang(lang) for lang in sorted_langs])
+        + " | Total |"
+    )
     divider = "| :--- | " + " | ".join([":---" for _ in sorted_langs]) + " | :--- |"
     print(header)
     print(divider)
@@ -391,7 +407,10 @@ def parse_requirements_content(content):
             if len(parts) > 3:
                 status = parts[3].lower()
                 # Open if Planned, Partial, Designed, or In Progress
-                if any(s in status for s in ["planned", "partial", "designed", "in progress"]):
+                if any(
+                    s in status
+                    for s in ["planned", "partial", "designed", "in progress"]
+                ):
                     open_reqs += 1
     return open_reqs, total
 
@@ -473,7 +492,10 @@ def run_history_analysis(root_dir, args):
 
     # Incremental Logic
     if args.incremental and os.path.exists(output_path):
-        print(f"Incremental mode: Checking {output_path} for last commit...", file=sys.stderr)
+        print(
+            f"Incremental mode: Checking {output_path} for last commit...",
+            file=sys.stderr,
+        )
         last_tracked = parse_existing_history(output_path)
         if last_tracked:
             print(f"Found last tracked commit: {last_tracked}", file=sys.stderr)
@@ -487,7 +509,8 @@ def run_history_analysis(root_dir, args):
                 existing_content = f.readlines()
         else:
             print(
-                "No existing history found in output file. Running full analysis.", file=sys.stderr
+                "No existing history found in output file. Running full analysis.",
+                file=sys.stderr,
             )
 
     commits = get_commits(cwd, args.limit, since_commit)
@@ -561,10 +584,14 @@ def run_history_analysis(root_dir, args):
             # Special Handling for Requirements and Issues
             if file_path == "docs/REQUIREMENTS.md":
                 content = get_file_content_git(cwd, commit["hash"], file_path)
-                stats["open_reqs"], stats["total_reqs"] = parse_requirements_content(content)
+                stats["open_reqs"], stats["total_reqs"] = parse_requirements_content(
+                    content
+                )
             elif file_path == "docs/ISSUES.md":
                 content = get_file_content_git(cwd, commit["hash"], file_path)
-                stats["open_issues"], stats["total_issues"] = parse_issues_content(content)
+                stats["open_issues"], stats["total_issues"] = parse_issues_content(
+                    content
+                )
 
             ext = os.path.splitext(file_path)[1]
             if ext not in lang_map:
@@ -674,9 +701,7 @@ def run_history_analysis(root_dir, args):
                 "JSON | Tests | T-LOC | Py-T | TS-T | SH-T | TODO (C/M) | "
                 "FIXME (C/M) | Req | Iss |"
             )
-            sep_line = (
-                "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
-            )
+            sep_line = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
 
             final_output.append(header_line)
             final_output.append(sep_line)
@@ -684,7 +709,9 @@ def run_history_analysis(root_dir, args):
             # Insert NEW rows
             final_output.extend(new_rows)
             # Append old rows
-            final_output.extend(line.strip() for line in existing_content[sep_index + 1 :])
+            final_output.extend(
+                line.strip() for line in existing_content[sep_index + 1 :]
+            )
         else:
             # Could not find table structure, just append?
             final_output.extend(line.strip() for line in existing_content)
@@ -896,7 +923,9 @@ def run_history_analysis(root_dir, args):
                 rel_path = os.path.relpath(output_svg, output_path.parent)
                 return f"![{title}]({rel_path})"
             except Exception as e:
-                print(f"Failed to generate SVG for {filename_base}: {e}", file=sys.stderr)
+                print(
+                    f"Failed to generate SVG for {filename_base}: {e}", file=sys.stderr
+                )
                 return f"```mermaid\n{mermaid_def}\n```"
         else:
             return f"```mermaid\n{mermaid_def}\n```"
@@ -951,7 +980,9 @@ def run_history_analysis(root_dir, args):
                     for line in content.splitlines():
                         if "TIMING_METRIC:" in line:
                             # TIMING_METRIC: Backend=18s
-                            m_time = re.search(r"TIMING_METRIC:\s*([^=]+)=([\d.]+)s", line)
+                            m_time = re.search(
+                                r"TIMING_METRIC:\s*([^=]+)=([\d.]+)s", line
+                            )
                             if m_time:
                                 timings.append((m_time.group(1), m_time.group(2)))
 
@@ -983,8 +1014,12 @@ def run_history_analysis(root_dir, args):
                                 summary_section.append(f"| {phase} | {duration}s |")
 
                         # Find Total
-                        total_time = next((d for p, d in timings if p == "Total"), "N/A")
-                        summary_section.extend([f"| **Total** | **{total_time}s** |", ""])
+                        total_time = next(
+                            (d for p, d in timings if p == "Total"), "N/A"
+                        )
+                        summary_section.extend(
+                            [f"| **Total** | **{total_time}s** |", ""]
+                        )
             except Exception:
                 pass
 
@@ -1063,7 +1098,9 @@ def run_history_analysis(root_dir, args):
             return chart.generate()
 
         charts.append(
-            generate_chart("Source Lines of Code over Time", make_loc_svg, "loc_history", loc_def)
+            generate_chart(
+                "Source Lines of Code over Time", make_loc_svg, "loc_history", loc_def
+            )
         )
 
         # Test Code Chart
@@ -1094,7 +1131,10 @@ def run_history_analysis(root_dir, args):
 
         charts.append(
             generate_chart(
-                "Test Lines of Code over Time", make_test_svg, "test_loc_history", test_def
+                "Test Lines of Code over Time",
+                make_test_svg,
+                "test_loc_history",
+                test_def,
             )
         )
 
@@ -1119,7 +1159,9 @@ def run_history_analysis(root_dir, args):
             return chart.generate()
 
         charts.append(
-            generate_chart("Technical Debt Markers", make_debt_svg, "debt_history", debt_def)
+            generate_chart(
+                "Technical Debt Markers", make_debt_svg, "debt_history", debt_def
+            )
         )
 
         charts.append("\n## Commit History")
@@ -1146,20 +1188,28 @@ def main():
 
     # History Args
     parser.add_argument(
-        "--history", action="store_true", help="Run in history mode (default if no other mode)"
+        "--history",
+        action="store_true",
+        help="Run in history mode (default if no other mode)",
     )
-    parser.add_argument("--limit", type=int, default=None, help="Limit number of commits")
+    parser.add_argument(
+        "--limit", type=int, default=None, help="Limit number of commits"
+    )
     parser.add_argument("--reverse", action="store_true", help="Oldest to Newest")
     parser.add_argument("--since", help="Analyze commits since this hash")
     parser.add_argument(
-        "--incremental", action="store_true", help="Append new commits to existing output file"
+        "--incremental",
+        action="store_true",
+        help="Append new commits to existing output file",
     )
 
     # Local Args
     parser.add_argument(
         "--analyze-local", action="store_true", help="Analyze current filesystem state"
     )
-    parser.add_argument("--markdown", action="store_true", help="Output Markdown (Local mode)")
+    parser.add_argument(
+        "--markdown", action="store_true", help="Output Markdown (Local mode)"
+    )
     parser.add_argument(
         "--dual",
         action="store_true",
@@ -1178,7 +1228,10 @@ def main():
     project_root = cwd
     try:
         root_output = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"], cwd=cwd, text=True, stderr=subprocess.DEVNULL
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=cwd,
+            text=True,
+            stderr=subprocess.DEVNULL,
         ).strip()
         project_root = Path(root_output)
     except Exception:
@@ -1239,7 +1292,9 @@ def check_submodule_status(project_root):
                 f"(Superproject expects {expected_hash[:7]}).",
                 file=sys.stderr,
             )
-            print("   Assuming local development mode. No changes made.", file=sys.stderr)
+            print(
+                "   Assuming local development mode. No changes made.", file=sys.stderr
+            )
             print("", file=sys.stderr)
 
     except Exception:

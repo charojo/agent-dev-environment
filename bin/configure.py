@@ -169,7 +169,7 @@ def wizard(root_dir):
     for lang, cfg in languages.items():
         enabled = cfg.get("enabled", False)
         desc = cfg.get("description", "")
-        print(f"LANGUAGE: {lang} (Currently: {'Enabled' if enabled else 'Disabled'})")
+        print(f"LANGUAGES: {lang} (Currently: {'Enabled' if enabled else 'Disabled'})")
         if desc:
             print(f"  Description: {desc}")
         if lang == "typescript":
@@ -187,7 +187,7 @@ def wizard(root_dir):
     for feat, cfg in features.items():
         enabled = cfg.get("enabled", False)
         desc = cfg.get("description", "")
-        print(f"FEATURE: {feat} (Currently: {'Enabled' if enabled else 'Disabled'})")
+        print(f"FEATURES: {feat} (Currently: {'Enabled' if enabled else 'Disabled'})")
         if desc:
             print(f"  Description: {desc}")
         choice = input(f"  Enable {feat}? [Y/n]: ").strip().lower()
@@ -272,7 +272,9 @@ def main():
     parser.add_argument("--enable-feature", action="append", help="Enable a feature")
     parser.add_argument("--disable-feature", action="append", help="Disable a feature")
     parser.add_argument("--non-interactive", action="store_true", help="Bypass prompts")
-    parser.add_argument("--check-diff", action="store_true", help="Check for dependency removals")
+    parser.add_argument(
+        "--check-diff", action="store_true", help="Check for dependency removals"
+    )
     parser.add_argument(
         "--confirm-removal",
         action="store_true",
@@ -348,14 +350,10 @@ def configure_shell_env(root_dir):
     bin_dir = (root_dir / "bin").resolve()
     print("\n--- Shell Configuration ---")
     print(
-        f"Adding '{bin_dir}' to your PATH allows you to run 'validate.sh' and other tools directly."
+        "Adding agent scripts to PATH allows running 'validate.sh' and other tools easily."
     )
 
-    choice = (
-        input("Do you want to add the Agent Environment bin directory to your PATH? [y/N]: ")
-        .strip()
-        .lower()
-    )
+    choice = input("Add to path (adds to ~/.bashrc) [y/N]: ").strip().lower()
     if choice != "y":
         return
 
@@ -383,12 +381,11 @@ def configure_shell_env(root_dir):
             return
 
     # Append
-    print(f"Appending to {rc_file}...")
+    print(f"Adding to {rc_file}...")
     try:
         with open(rc_file, "a") as f:
             f.write(f"\n# Agent Development Environment\n{export_line}\n")
         print("✅ Added to config.")
-        print(f"👉 Please run: source {rc_file}")
     except Exception as e:
         print(f"Error writing to {rc_file}: {e}")
 

@@ -46,7 +46,9 @@ def extract_frontend_failures(content):
     # Or "FAIL type"
 
     # Pattern for stderr capture
-    stderr_pattern = re.compile(r"stderr\s+\|\s+(.*?)\n(.*?)(?=\n|stderr|✓|×)", re.DOTALL)
+    stderr_pattern = re.compile(
+        r"stderr\s+\|\s+(.*?)\n(.*?)(?=\n|stderr|✓|×)", re.DOTALL
+    )
     for match in stderr_pattern.finditer(content):
         test_path = match.group(1).strip()
         error_chunk = match.group(2).strip()
@@ -92,11 +94,15 @@ def extract_e2e_failures(content):
     #   x  1 [chromium] › ...
     # (Note: it might be an 'x' or unicode cross)
 
-    failed_lines = re.findall(r"^\s*[xX✕]\s+.*?\[chromium\].*?›\s+(.*)", content, re.MULTILINE)
+    failed_lines = re.findall(
+        r"^\s*[xX✕]\s+.*?\[chromium\].*?›\s+(.*)", content, re.MULTILINE
+    )
     for line in failed_lines:
         parts = line.split("›")
         test_name = parts[-1].strip() if parts else "Unknown Test"
-        failures.append({"category": "E2E", "test": test_name, "error": "See logs for details"})
+        failures.append(
+            {"category": "E2E", "test": test_name, "error": "See logs for details"}
+        )
 
     return failures
 

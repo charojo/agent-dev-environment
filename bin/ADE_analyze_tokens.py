@@ -25,7 +25,9 @@ def analyze_ledger(ledger_path):
 
     total_tokens = 0
     total_cost = 0.0
-    model_usage = defaultdict(lambda: {"count": 0, "input": 0, "output": 0, "cost": 0.0})
+    model_usage = defaultdict(
+        lambda: {"count": 0, "input": 0, "output": 0, "cost": 0.0}
+    )
 
     print(f"Analyzing {ledger_path}...")
     print("-" * 60)
@@ -67,7 +69,9 @@ def analyze_ledger(ledger_path):
         return
 
     # Report
-    print(f"{'Model':<30} | {'Reqs':<5} | {'Input':<10} | {'Output':<10} | {'Est. Cost':<10}")
+    print(
+        f"{'Model':<30} | {'Reqs':<5} | {'Input':<10} | {'Output':<10} | {'Est. Cost':<10}"
+    )
     print("-" * 80)
     for model, data in model_usage.items():
         out_cost = f"${data['cost']:.4f}"
@@ -76,7 +80,9 @@ def analyze_ledger(ledger_path):
             f"{data['output']:<10} | {out_cost}"
         )
     print("-" * 80)
-    print(f"{'TOTAL':<30} | {len(rows):<5} | {'-':<10} | {total_tokens:<10} | ${total_cost:.4f}")
+    print(
+        f"{'TOTAL':<30} | {len(rows):<5} | {'-':<10} | {total_tokens:<10} | ${total_cost:.4f}"
+    )
     print("\noptimization Suggestions:")
 
     # Simple Heuristics
@@ -88,7 +94,9 @@ def analyze_ledger(ledger_path):
                 "Consider shortening system prompts."
             )
 
-        expensive_models = [m for m, d in model_usage.items() if "pro" in m and d["count"] > 5]
+        expensive_models = [
+            m for m, d in model_usage.items() if "pro" in m and d["count"] > 5
+        ]
         if expensive_models:
             models_str = ", ".join(expensive_models)
             print(

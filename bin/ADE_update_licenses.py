@@ -28,7 +28,9 @@ OUTPUT_FILE = SRC_WEB_DIR / "src" / "features" / "settings" / "licenses.json"
 def run_command(cmd, cwd=None, capture_output=True):
     """Run a shell command and return result."""
     try:
-        result = subprocess.run(cmd, cwd=cwd, capture_output=capture_output, text=True, check=True)
+        result = subprocess.run(
+            cmd, cwd=cwd, capture_output=capture_output, text=True, check=True
+        )
         return result
     except subprocess.CalledProcessError as e:
         print(f"Error running command: {' '.join(cmd)}")

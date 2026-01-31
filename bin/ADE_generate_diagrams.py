@@ -55,7 +55,9 @@ def compile_dot_to_file(dot_file, fmt="png", dpi=300):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Generate diagrams from DOT files.")
     parser.add_argument(
-        "directory", nargs="?", help="Directory to scan (defaults to git root or current dir)"
+        "directory",
+        nargs="?",
+        help="Directory to scan (defaults to git root or current dir)",
     )
     args = parser.parse_args(argv)
 
