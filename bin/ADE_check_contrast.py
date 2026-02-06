@@ -33,7 +33,7 @@ def calculate_ratio(l1, l2):
 
 
 def check_contrast():
-    parser = argparse.ArgumentParser(description="Papeterie Contrast Checker")
+    parser = argparse.ArgumentParser(description="Contrast Standards Checker")
     parser.add_argument("--output", type=str, help="Output file path")
     args = parser.parse_args()
 
@@ -46,7 +46,7 @@ def check_contrast():
 
     points = [0.0, 0.60, 1.0]
     output_lines = [
-        "Papeterie Contrast Standards Report",
+        "Contrast Standards Report",
         "==================================",
         "",
         "| Theme | Slider | Ratio | WCAG Compliance |",

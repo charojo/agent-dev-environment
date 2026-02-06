@@ -9,7 +9,7 @@
 # <!-- @diagram: validate_workflow.svg -->
 
 """
-Automated Diagram Generator for Papeterie Engine.
+Automated Diagram Generator.
 Scans the repository for *.dot files and compiles them to *.svg using Graphviz.
 """
 

@@ -8,8 +8,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
 
 # Patterns that indicate absolute project paths
-# We look for the common patterns that appeared: /home/chacker/projects/papeterie-engine
-# and also the file:/// scheme followed by an absolute linux path.
+# Patterns indicating absolute project paths that should be relative.
+# We catch the file:/// scheme followed by an absolute linux path.
 PATTERNS = [
     re.compile(r"file:///home/[\w.-]+/"),
     re.compile(rf"{re.escape(str(PROJECT_ROOT))}"),

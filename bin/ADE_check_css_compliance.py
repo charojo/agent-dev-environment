@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CSS Compliance Checker for Papeterie Engine.
+CSS Compliance Checker.
 
 Scans JSX components for design system violations:
 - Hardcoded rgba() colors

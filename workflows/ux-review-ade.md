@@ -2,7 +2,7 @@
 description: Perform a UX and Accessibility Review of the application
 ---
 
-This review ensures that the new schema-driven views in the papeterie-engine remain accessible, navigable, and consistent with the "Toy Theater" vision.
+This review ensures that the application views remain accessible, navigable, and consistent with design standards.
 
 ## 1. Schema-Driven Field Accessibility
 Every input field generated dynamically from `layer-schema.yaml` must be accessible.

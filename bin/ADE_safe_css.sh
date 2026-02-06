@@ -15,7 +15,7 @@ PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")" # agent_env/bin -> agent_en
 # Actually, if agent_env is at root, then SCRIPT_DIR is <root>/agent_env/bin
 # So dirname(SCRIPT_DIR) is <root>/agent_env
 # dirname(dirname(SCRIPT_DIR)) is <root>
-# Let's verify structure: /home/chacker/projects/papeterie-pythonAnywhere/agent_env/bin
+# Structure: <root>/agent_env/bin
 
 # 1. Health Check
 "$SCRIPT_DIR/ADE_check_health.sh"
