@@ -730,7 +730,9 @@ run_static_analysis() {
     
     # Run all non-E2E validation tests
     # test_static_analysis.py, test_linters.py, etc.
-    uv run pytest -q tests/validation --ignore=tests/validation/test_e2e_wrapper.py >> "$LOG_FILE" 2>&1 || true
+    if [ -d "tests/validation" ]; then
+        uv run pytest -q tests/validation --ignore=tests/validation/test_e2e_wrapper.py >> "$LOG_FILE" 2>&1 || true
+    fi
     
     local end=$(date +%s)
     STATIC_DURATION=$((end - start))

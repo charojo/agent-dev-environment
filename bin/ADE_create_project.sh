@@ -262,6 +262,27 @@ if [ -n "$ADOPT_PATH" ]; then
         echo -e "${GREEN}  ✓ pyproject.toml${NC}"
         ADDED_FILES=true
     fi
+
+    if [ ! -f "AGENTS.md" ] && [ -f "${TEMPLATES_DIR}/AGENTS.md" ]; then
+        cp "${TEMPLATES_DIR}/AGENTS.md" AGENTS.md
+        sed -i "s/\[Project Name\]/${PROJECT_NAME}/g" AGENTS.md
+        echo -e "${GREEN}  ✓ AGENTS.md${NC}"
+        ADDED_FILES=true
+    fi
+
+    if [ ! -f "GEMINI.md" ] && [ -f "${TEMPLATES_DIR}/GEMINI.md" ]; then
+        cp "${TEMPLATES_DIR}/GEMINI.md" GEMINI.md
+        sed -i "s/\[Project Name\]/${PROJECT_NAME}/g" GEMINI.md
+        echo -e "${GREEN}  ✓ GEMINI.md${NC}"
+        ADDED_FILES=true
+    fi
+
+    if [ ! -f "llm.txt" ] && [ -f "${TEMPLATES_DIR}/llm.txt" ]; then
+        cp "${TEMPLATES_DIR}/llm.txt" llm.txt
+        sed -i "s/\[Project Name\]/${PROJECT_NAME}/g" llm.txt
+        echo -e "${GREEN}  ✓ llm.txt${NC}"
+        ADDED_FILES=true
+    fi
     
     if [ ! -f "README.agent.md" ]; then
         cat > README.agent.md << EOF
@@ -551,6 +572,24 @@ if [ -f "${TEMPLATES_DIR}/pyproject.toml" ]; then
     echo -e "${GREEN}  ✓ pyproject.toml${NC}"
 fi
 
+if [ -f "${TEMPLATES_DIR}/AGENTS.md" ]; then
+    cp "${TEMPLATES_DIR}/AGENTS.md" AGENTS.md
+    sed -i "s/\[Project Name\]/${PROJECT_NAME}/g" AGENTS.md
+    echo -e "${GREEN}  ✓ AGENTS.md${NC}"
+fi
+
+if [ -f "${TEMPLATES_DIR}/GEMINI.md" ]; then
+    cp "${TEMPLATES_DIR}/GEMINI.md" GEMINI.md
+    sed -i "s/\[Project Name\]/${PROJECT_NAME}/g" GEMINI.md
+    echo -e "${GREEN}  ✓ GEMINI.md${NC}"
+fi
+
+if [ -f "${TEMPLATES_DIR}/llm.txt" ]; then
+    cp "${TEMPLATES_DIR}/llm.txt" llm.txt
+    sed -i "s/\[Project Name\]/${PROJECT_NAME}/g" llm.txt
+    echo -e "${GREEN}  ✓ llm.txt${NC}"
+fi
+
 # Create README.agent.md - guidance from agent-dev-environment
 cat > README.agent.md << EOF
 # Agent Environment Setup Guide
@@ -647,6 +686,10 @@ logs/
 # Environment
 .env
 .env.local
+
+# Agent Environment
+.agent/*
+!.agent/workflows/
 EOF
 echo -e "${GREEN}  ✓ .gitignore${NC}"
 

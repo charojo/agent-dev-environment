@@ -15,3 +15,21 @@ dependencies = [
 
 [dependency-groups]
 dev = []
+
+[tool.pytest.ini_options]
+pythonpath = "."
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (live api)"
+]
+norecursedirs = [".agent", "agent_env", "node_modules", ".venv"]
+
+[tool.ruff]
+exclude = [
+    ".agent",
+    "agent_env",
+    ".git",
+    ".venv",
+    "node_modules",
+]
+line-length = 88
