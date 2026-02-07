@@ -1,8 +1,5 @@
 ---
-name: triage-and-fix-loop
-mode: autonomous
-terminal_policy: always_proceed
-review_policy: always_proceed
+description: Triage and fix regression issues in an iterative loop
 ---
 
 # 1. State Analysis & Transparency Log

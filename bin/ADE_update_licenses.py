@@ -22,7 +22,10 @@ SRC_WEB_DIR = PROJECT_ROOT / "src" / "web"
 LICENSES_DIR = PROJECT_ROOT / "licenses"
 FRONTEND_LICENSES_FILE = LICENSES_DIR / "frontend-licenses.json"
 BACKEND_LICENSES_FILE = LICENSES_DIR / "backend-licenses.json"
+# Fallback output location if src/web is missing
 OUTPUT_FILE = SRC_WEB_DIR / "src" / "features" / "settings" / "licenses.json"
+if not SRC_WEB_DIR.exists():
+    OUTPUT_FILE = PROJECT_ROOT / "licenses.json"
 
 
 def run_command(cmd, cwd=None, capture_output=True):
@@ -40,6 +43,10 @@ def run_command(cmd, cwd=None, capture_output=True):
 
 def generate_frontend_licenses():
     """Run license-checker to generate frontend licenses."""
+    if not SRC_WEB_DIR.exists():
+        print("No frontend (src/web) found. Skipping frontend licenses.")
+        return True
+
     print("Generating Frontend Licenses...")
 
     # Ensure licenses dir exists
@@ -87,7 +94,7 @@ def generate_backend_licenses():
     # Prepare command args
     cmd_args = [pip_licenses_cmd]
     if pip_licenses_cmd == "uv":
-        cmd_args = ["uv", "tool", "run", "pip-licenses"]
+        cmd_args = ["uv", "run", "--with", "pip-licenses", "pip-licenses"]
 
     cmd_args.extend(["--format=json", "--with-urls", "--with-authors"])
 
@@ -153,30 +160,27 @@ def merge_licenses():
     print("Merging Licenses...")
 
     try:
-        if not FRONTEND_LICENSES_FILE.exists():
-            print(f"Error: {FRONTEND_LICENSES_FILE} not found.")
-            return False
+        frontend_processed = {}
+        if FRONTEND_LICENSES_FILE.exists():
+            with open(FRONTEND_LICENSES_FILE, "r", encoding="utf-8") as f:
+                frontend_data = json.load(f)
 
-        if not BACKEND_LICENSES_FILE.exists():
+            # Process frontend licenses (add source, fix paths)
+            for key, value in frontend_data.items():
+                new_val = value.copy()
+                new_val["source"] = "frontend"
+                if "path" in new_val:
+                    new_val["path"] = make_path_relative(new_val["path"])
+                if "licenseFile" in new_val:
+                    new_val["licenseFile"] = make_path_relative(new_val["licenseFile"])
+                frontend_processed[key] = new_val
+
+        if BACKEND_LICENSES_FILE.exists():
+            with open(BACKEND_LICENSES_FILE, "r", encoding="utf-8") as f:
+                backend_data = json.load(f)
+        else:
             print(f"Error: {BACKEND_LICENSES_FILE} not found.")
             return False
-
-        with open(FRONTEND_LICENSES_FILE, "r", encoding="utf-8") as f:
-            frontend_data = json.load(f)
-
-        with open(BACKEND_LICENSES_FILE, "r", encoding="utf-8") as f:
-            backend_data = json.load(f)
-
-        # Process frontend licenses (add source, fix paths)
-        frontend_processed = {}
-        for key, value in frontend_data.items():
-            new_val = value.copy()
-            new_val["source"] = "frontend"
-            if "path" in new_val:
-                new_val["path"] = make_path_relative(new_val["path"])
-            if "licenseFile" in new_val:
-                new_val["licenseFile"] = make_path_relative(new_val["licenseFile"])
-            frontend_processed[key] = new_val
 
         # Merge
         merged = {**frontend_processed, **backend_data}
@@ -213,6 +217,13 @@ def main():
 
     if not merge_licenses():
         sys.exit(1)
+
+    # Cleanup intermediate files
+    for f in [FRONTEND_LICENSES_FILE, BACKEND_LICENSES_FILE]:
+        if f.exists():
+            f.unlink()
+    if LICENSES_DIR.exists() and not any(LICENSES_DIR.iterdir()):
+        LICENSES_DIR.rmdir()
 
     print("========================================")
     print("Success! License information updated.")
