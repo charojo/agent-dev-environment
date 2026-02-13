@@ -33,7 +33,7 @@ GEN_DOCS_DIR.mkdir(parents=True, exist_ok=True)
 GEN_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 # Regex patterns
-DOC_BLOCK_START = re.compile(r"^\s*## @DOC\s*(.*)$")
+DOC_BLOCK_START = re.compile(r"^\s*(?://\s*)?## @DOC\s*(.*)$")
 DIAGRAM_LINK = re.compile(
     r"(\s*(?:#|//)\s*See architecture:\s*)(\[.*?\]\(.*?\))(\s*<!--\s*@diagram:\s*(.*?)\s*-->)"
 )

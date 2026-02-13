@@ -40,7 +40,13 @@ AGENT_ENV_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 AGENT_ENV_NAME="$(basename "$AGENT_ENV_ROOT")"
 
 # Default: create projects as siblings (in parent directory)
-DEFAULT_OUTPUT="$(cd "$AGENT_ENV_ROOT/.." && pwd)"
+# If we are a submodule, we want to be siblings of the PARENT project
+SUPERPROJECT="$(git -C "$AGENT_ENV_ROOT" rev-parse --show-superproject-working-tree 2>/dev/null || true)"
+if [ -n "$SUPERPROJECT" ]; then
+    DEFAULT_OUTPUT="$(cd "$SUPERPROJECT/.." && pwd)"
+else
+    DEFAULT_OUTPUT="$(cd "$AGENT_ENV_ROOT/.." && pwd)"
+fi
 
 # Default values
 PROJECT_NAME=""
@@ -509,6 +515,7 @@ echo ""
 # Step 1: Create project directory
 echo -e "${BLUE}[1/6] Creating project directory...${NC}"
 mkdir -p "$PROJECT_DIR"
+mkdir -p "$PROJECT_DIR/docs"
 echo -e "${GREEN}  ✓ Created ${PROJECT_DIR}${NC}"
 
 # Step 2: Initialize git
@@ -551,18 +558,18 @@ if [ -f "${TEMPLATES_DIR}/config.toml" ]; then
 fi
 
 if [ -f "${TEMPLATES_DIR}/REQUIREMENTS.md" ]; then
-    cp "${TEMPLATES_DIR}/REQUIREMENTS.md" REQUIREMENTS.md
-    echo -e "${GREEN}  ✓ REQUIREMENTS.md${NC}"
+    cp "${TEMPLATES_DIR}/REQUIREMENTS.md" docs/REQUIREMENTS.md
+    echo -e "${GREEN}  ✓ docs/REQUIREMENTS.md${NC}"
 fi
 
 if [ -f "${TEMPLATES_DIR}/ISSUES.md" ]; then
-    cp "${TEMPLATES_DIR}/ISSUES.md" ISSUES.md
-    echo -e "${GREEN}  ✓ ISSUES.md${NC}"
+    cp "${TEMPLATES_DIR}/ISSUES.md" docs/ISSUES.md
+    echo -e "${GREEN}  ✓ docs/ISSUES.md${NC}"
 fi
 
 if [ -f "${TEMPLATES_DIR}/PLANS.md" ]; then
-    cp "${TEMPLATES_DIR}/PLANS.md" PLANS.md
-    echo -e "${GREEN}  ✓ PLANS.md${NC}"
+    cp "${TEMPLATES_DIR}/PLANS.md" docs/PLANS.md
+    echo -e "${GREEN}  ✓ docs/PLANS.md${NC}"
 fi
 
 if [ -f "${TEMPLATES_DIR}/pyproject.toml" ]; then
@@ -667,6 +674,8 @@ __pycache__/
 *.py[cod]
 .venv/
 *.egg-info/
+.coverage
+
 
 # Node
 node_modules/

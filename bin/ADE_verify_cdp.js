@@ -1,3 +1,7 @@
+// ## @DOC
+// ### Ade Verify Cdp
+// Verifies Chrome DevTools Protocol connection.
+
 const http = require('http');
 
 const hostIp = '172.25.192.1'; // Detected WSL host IP

@@ -1,4 +1,9 @@
 #!/bin/bash
+# ## @DOC
+# ### Ensure Backend
+# Ensures backend dependencies and environment are set up.
+
+
 # Kill existing backend if it's there
 pkill -f "uvicorn src.server.main:app" || echo "No backend running."
 sleep 2

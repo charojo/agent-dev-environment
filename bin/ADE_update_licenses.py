@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# ## @DOC
+# ### Ade Update Licenses
+# Updates license information in source files.
+
+
 """
 ADE_update_licenses.py
 
@@ -8,11 +13,18 @@ Consolidated script to:
 3. Merge them into a unified format for the application
 """
 
+import datetime
 import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+def log(msg):
+    """Print message with timestamp."""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {msg}")
+
 
 # Paths
 # This script is in agent_env/bin/
@@ -30,30 +42,50 @@ if not SRC_WEB_DIR.exists():
 
 def run_command(cmd, cwd=None, capture_output=True):
     """Run a shell command and return result."""
+    log(f"Running command: {' '.join(cmd)}")
+    if cwd:
+        log(f"  CWD: {cwd}")
+    
     try:
-        result = subprocess.run(
-            cmd, cwd=cwd, capture_output=capture_output, text=True, check=True
-        )
-        return result
+        if capture_output:
+            result = subprocess.run(
+                cmd, cwd=cwd, capture_output=True, text=True, check=True
+            )
+            return result
+        else:
+            # Stream output directly to stdout/stderr
+            result = subprocess.run(
+                cmd, cwd=cwd, text=True, check=True
+            )
+            return result
     except subprocess.CalledProcessError as e:
-        print(f"Error running command: {' '.join(cmd)}")
-        print(f"Stderr: {e.stderr}")
+        log(f"Error running command: {' '.join(cmd)}")
+        if hasattr(e, 'stderr') and e.stderr:
+            print(f"Stderr: {e.stderr}")
         raise
+
 
 
 def generate_frontend_licenses():
     """Run license-checker to generate frontend licenses."""
     if not SRC_WEB_DIR.exists():
-        print("No frontend (src/web) found. Skipping frontend licenses.")
+        log("No frontend (src/web) found. Skipping frontend licenses.")
+        return True
+    # Check for package.json
+    if not (SRC_WEB_DIR / "package.json").exists():
+        log("No package.json found in src/web. Skipping frontend licenses.")
         return True
 
-    print("Generating Frontend Licenses...")
+    log("Generating Frontend Licenses...")
 
     # Ensure licenses dir exists
     LICENSES_DIR.mkdir(exist_ok=True)
+    log(f"Licenses directory: {LICENSES_DIR}")
+
 
     cmd = [
         "npx",
+        "-y",
         "license-checker",
         "--json",
         "--out",
@@ -68,16 +100,20 @@ def generate_frontend_licenses():
         return False
 
     try:
-        run_command(cmd, cwd=SRC_WEB_DIR)
-        print("✓ Frontend licenses generated.")
+        # For frontend, we want to see what's happening if it hangs
+        run_command(cmd, cwd=SRC_WEB_DIR, capture_output=False)
+        log("✓ Frontend licenses generated.")
         return True
     except subprocess.CalledProcessError:
+        log("Failed to generate frontend licenses.")
         return False
+
 
 
 def generate_backend_licenses():
     """Run pip-licenses to generate backend licenses."""
-    print("Generating Backend Licenses...")
+    log("Generating Backend Licenses...")
+
 
     # Determine pip-licenses command
     venv_pip_licenses = PROJECT_ROOT / ".venv" / "bin" / "pip-licenses"
@@ -129,11 +165,13 @@ def generate_backend_licenses():
             transformed[key] = entry
 
         # Write to intermediate file
+        log(f"Writing backend licenses to {BACKEND_LICENSES_FILE}")
         with open(BACKEND_LICENSES_FILE, "w", encoding="utf-8") as f:
             json.dump(transformed, f, indent=2, ensure_ascii=False)
 
-        print(f"✓ Generated {len(transformed)} Python package licenses")
+        log(f"✓ Generated {len(transformed)} Python package licenses")
         return True
+
 
     except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
         print(f"Error generating backend licenses: {e}")
@@ -204,30 +242,37 @@ def merge_licenses():
 
 
 def main():
-    print("========================================")
-    print("Updating Open Source License Information")
-    print("========================================")
-    print(f"Project Root: {PROJECT_ROOT}")
+    log("========================================")
+    log("Updating Open Source License Information")
+    log("========================================")
+    log(f"Project Root: {PROJECT_ROOT}")
 
     if not generate_frontend_licenses():
+        log("Frontend license generation failed.")
         sys.exit(1)
 
     if not generate_backend_licenses():
+        log("Backend license generation failed.")
         sys.exit(1)
 
     if not merge_licenses():
+        log("Merging licenses failed.")
         sys.exit(1)
 
     # Cleanup intermediate files
+    log("Cleaning up intermediate files...")
     for f in [FRONTEND_LICENSES_FILE, BACKEND_LICENSES_FILE]:
         if f.exists():
+            log(f"Removing {f}")
             f.unlink()
     if LICENSES_DIR.exists() and not any(LICENSES_DIR.iterdir()):
+        log(f"Removing empty {LICENSES_DIR}")
         LICENSES_DIR.rmdir()
 
-    print("========================================")
-    print("Success! License information updated.")
-    print("========================================")
+    log("========================================")
+    log("Success! License information updated.")
+    log("========================================")
+
 
 
 if __name__ == "__main__":

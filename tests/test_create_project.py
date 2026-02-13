@@ -1,3 +1,9 @@
+# ## @DOC
+# ### Test Create Project
+# Tests the functionality of the ADE_create_project.sh script for creating project directories and initializing git repositories.
+
+
+
 """Tests for bin/ADE_create_project.sh
 
 Run with --keep to preserve test projects for exploration:

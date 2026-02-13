@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# ## @DOC
+# ### Ade Capture Issue
+# Captures environment state for issue reporting.
+
+
 set -euo pipefail
 
 # Simple helper to capture development issues into the canonical backlog

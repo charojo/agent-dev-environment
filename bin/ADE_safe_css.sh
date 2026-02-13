@@ -1,4 +1,8 @@
 #!/bin/bash
+# ## @DOC
+# ### Ade Safe Css
+# Validates CSS files against Safe CSS standards.
+
 # agent_env/bin/ADE_safe_css.sh
 # "Turbo" workflow for safe CSS refactoring.
 # 1. Checks system health (Backend + Frontend)

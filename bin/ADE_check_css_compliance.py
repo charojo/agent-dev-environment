@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ## @DOC
+# ### Ade Check Css Compliance
+# Check CSS compliance
+
+
+
 """
 CSS Compliance Checker.
 

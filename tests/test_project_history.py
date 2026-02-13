@@ -1,3 +1,9 @@
+# ## @DOC
+# ### Test Project History
+# Tests the functionality of the ADE_project_history script for analyzing code, commits, and generating project history.
+
+
+
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch

@@ -1,3 +1,7 @@
+# ## @DOC
+# ### Ade Check Models
+# Checks availability of required AI models.
+
 import os
 
 from dotenv import load_dotenv

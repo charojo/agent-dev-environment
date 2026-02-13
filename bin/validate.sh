@@ -492,7 +492,7 @@ run_backend_tests() {
     echo "----------------------------------------" >> "$LOG_FILE"
     
     # Execute: Raw -> Console (via tee), Raw -> Temp File
-    eval "uv run pytest $pytest_args 2>&1" | tee "$output_tmp"
+    eval "uv run python -m pytest $pytest_args 2>&1" | tee "$output_tmp"
     local exit_code=${PIPESTATUS[0]}
     
     # Pytest returns 5 if no tests are collected. We treat this as success for validation.
@@ -684,7 +684,7 @@ run_e2e_tests() {
     log_msg "Command: uv run pytest -s --timeout=300 tests/validation/test_e2e_wrapper.py"
     
     # Execute: Raw -> Console (via tee), Raw -> Temp File
-    eval "uv run pytest -s --timeout=300 tests/validation/test_e2e_wrapper.py 2>&1" | tee "$output_tmp"
+    eval "uv run python -m pytest -s --timeout=300 tests/validation/test_e2e_wrapper.py 2>&1" | tee "$output_tmp"
     local exit_code=${PIPESTATUS[0]}
     
     # Append Stripped -> Log File
@@ -731,7 +731,7 @@ run_static_analysis() {
     # Run all non-E2E validation tests
     # test_static_analysis.py, test_linters.py, etc.
     if [ -d "tests/validation" ]; then
-        uv run pytest -q tests/validation --ignore=tests/validation/test_e2e_wrapper.py >> "$LOG_FILE" 2>&1 || true
+        uv run python -m pytest -q tests/validation --ignore=tests/validation/test_e2e_wrapper.py >> "$LOG_FILE" 2>&1 || true
     fi
     
     local end=$(date +%s)

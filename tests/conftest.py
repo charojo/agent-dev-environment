@@ -1,3 +1,9 @@
+# ## @DOC
+# ### Conftest
+# Configures pytest by adding a command-line option to preserve test projects and provides a fixture to check its value.
+
+
+
 """Pytest configuration for create-project tests."""
 
 import pytest

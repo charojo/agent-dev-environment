@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# ## @DOC
+# ### Ade Analyze Tokens
+# Analyzes token usage in the project.
+
 """
 Generic Token Optimization Analyzer.
 Parses a token ledger CSV to calculate costs and suggest optimizations.

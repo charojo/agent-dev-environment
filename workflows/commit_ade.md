@@ -25,7 +25,3 @@ description: Validate, stage, review, and commit changes
 5. Commit
    Commit with a clear message (e.g., "Fixing: description" or "Feat: description").
    git commit -m "message"
-
-6. Push (Optional)
-   Push to remote.
-   git push origin HEAD

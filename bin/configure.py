@@ -401,10 +401,22 @@ def ensure_templates_installed(root_dir):
     if not docs_dir.exists():
         docs_dir.mkdir(parents=True, exist_ok=True)
 
-    for template_name in ["REQUIREMENTS.md", "ISSUES.md"]:
+    for template_name in ["REQUIREMENTS.md", "ISSUES.md", "PLANS.md"]:
         target_path = docs_dir / template_name
         source_path = templates_dir / template_name
+        project_root_path = project_root / template_name
 
+        # Migration: If file exists in root, move it to docs/
+        if project_root_path.exists():
+            print(f"📦 Moving {template_name} from root to docs/...")
+            if target_path.exists():
+                print(f"  ⚠️  {template_name} already exists in docs/. Backing up root version to {template_name}.old")
+                project_root_path.rename(project_root / f"{template_name}.old")
+            else:
+                project_root_path.rename(target_path)
+                print(f"  ✓ Moved {template_name} to docs/")
+
+        # Installation
         if source_path.exists() and not target_path.exists():
             # Only install if missing. Do not overwrite existing documentation.
             if copy_if_changed(source_path, target_path):
@@ -460,6 +472,9 @@ def ensure_docs_gen_ignored(root_dir):
         if ".agent/" not in content:
             content += f"\n# Agent Metadata\n{agent_dir_entry}"
             needs_write = True
+        if ".coverage" not in content:
+            content += "\n# Global Coverage\n.coverage\n"
+            needs_write = True
 
         if needs_write:
             print("Updating .gitignore...")
@@ -467,7 +482,7 @@ def ensure_docs_gen_ignored(root_dir):
     else:
         print("Creating .gitignore...")
         gitignore_path.write_text(
-            f"# Automated Doc Generation\n{ignore_entry}\n# Agent Metadata\n{agent_dir_entry}"
+            f"# Automated Doc Generation\n{ignore_entry}\n# Agent Metadata\n{agent_dir_entry}\n# Global Coverage\n.coverage\n"
         )
 
 

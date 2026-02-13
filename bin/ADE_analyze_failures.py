@@ -1,3 +1,9 @@
+# ## @DOC
+# ### Ade Analyze Failures
+# Parse validation logs for failures.
+
+
+
 import argparse
 import re
 from pathlib import Path

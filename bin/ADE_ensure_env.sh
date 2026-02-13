@@ -30,6 +30,18 @@ cd "$PROJECT_ROOT"
 
 echo -e "${BLUE}Checking environment health...${NC}"
 
+# Check for VIRTUAL_ENV mismatch (project was moved)
+if [ -n "$VIRTUAL_ENV" ]; then
+    CURRENT_VENV_PATH="$(cd .venv 2>/dev/null && pwd || true)"
+    if [ -n "$CURRENT_VENV_PATH" ] && [ "$VIRTUAL_ENV" != "$CURRENT_VENV_PATH" ]; then
+        echo -e "${YELLOW}⚠ Warning: VIRTUAL_ENV mismatch detected.${NC}"
+        echo -e "  Current session: $VIRTUAL_ENV"
+        echo -e "  Project environment: $CURRENT_VENV_PATH"
+        echo -e "  The project may have been moved. Recreating .venv to fix internal paths..."
+        rm -rf .venv
+    fi
+fi
+
 # 1. Check Python environment (.venv)
 if [ ! -d ".venv" ]; then
     echo -e "${YELLOW}.venv not found. Initializing Python environment...${NC}"
