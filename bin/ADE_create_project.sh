@@ -59,6 +59,7 @@ WITH_DOCS=false
 NON_INTERACTIVE=false
 SKIP_VALIDATE=false
 COPY_ENV=false
+REPO_URL=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -108,6 +109,10 @@ while [[ $# -gt 0 ]]; do
             COPY_ENV=true
             shift
             ;;
+        --repo-url)
+            REPO_URL="$2"
+            shift 2
+            ;;
         --help|-h)
             echo "Usage:"
             echo "  $0 --name <project-name> [--prompt \"description\"] [--output <path>] [--dry-run] [--web] [--docs]"
@@ -125,6 +130,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --docs       Enable Documentation/API Docs features"
             echo "  --no-validate Skip initial project validation"
             echo "  --copy-env   Force recursive copy of agent_env (instead of submodule)"
+            echo "  --repo-url   URL to use for agent_env submodule (overrides auto-detection)"
             echo ""
             echo "Examples:"
             echo "  # Create new project with web support"
@@ -142,9 +148,26 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Get agent_env source for submodule
-# We default to the local repository path to ensure that whatever fixes
-# are in the current workspace are reflected in the new project.
-AGENT_ENV_URL="$AGENT_ENV_ROOT"
+# We prefer the upstream remote URL if available, so new projects
+# aren't hard-linked to this specific local machine/project.
+AGENT_ENV_URL=""
+
+if [ -n "$REPO_URL" ]; then
+    AGENT_ENV_URL="$REPO_URL"
+elif [ -d "$AGENT_ENV_ROOT/.git" ]; then
+    # Try to get remote origin
+    REMOTE_URL=$(git -C "$AGENT_ENV_ROOT" remote get-url origin 2>/dev/null || true)
+    
+    # Check if it looks like a remote URL (http, git, ssh) and not a local path
+    if [[ "$REMOTE_URL" =~ ^(https?|git|ssh):// ]] || [[ "$REMOTE_URL" =~ ^git@ ]]; then
+        AGENT_ENV_URL="$REMOTE_URL"
+    fi
+fi
+
+# Fallback to local path if no valid remote found
+if [ -z "$AGENT_ENV_URL" ]; then
+    AGENT_ENV_URL="$AGENT_ENV_ROOT"
+fi
 
 # ============================================================================
 # ADOPT MODE: Add agent_env to existing project
