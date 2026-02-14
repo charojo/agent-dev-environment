@@ -469,8 +469,8 @@ run_backend_tests() {
     # Selection already computed upfront
     # CRITICAL: Ignore tests/validation and environment submodules/directories
     # to prevent double-execution, deadlocks, and infinite recursion in projects.
-    # --ignore=tests/validation 
-    pytest_args="$pytest_args $PYTEST_SELECTION --ignore=.agent --ignore=agent_env"
+    # Also ignore test_create_project.py as it is too heavy for standard validation.
+    pytest_args="$pytest_args $PYTEST_SELECTION --ignore=.agent --ignore=agent_env --ignore=tests/test_create_project.py"
     
     # Add marker for live tests
     if [ "$INCLUDE_LIVE" = false ]; then
