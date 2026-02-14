@@ -828,9 +828,11 @@ print_summary() {
     # We must not redirect >> to LOG_FILE while reading from it in the script,
     # as this causes contention/permission errors.
     local analysis_tmp="logs/analysis_output.tmp"
-    $ANALYZE_SCRIPT "$LOG_FILE" > "$analysis_tmp"
-    cat "$analysis_tmp" >> "$LOG_FILE"
-    rm -f "$analysis_tmp"
+    if [ -n "$ANALYZE_SCRIPT" ]; then
+        $ANALYZE_SCRIPT "$LOG_FILE" > "$analysis_tmp"
+        cat "$analysis_tmp" >> "$LOG_FILE"
+        rm -f "$analysis_tmp"
+    fi
 
     # Run Failure Analysis
     if [ -f "./agent_env/bin/ADE_analyze_failures.py" ]; then
