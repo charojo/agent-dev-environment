@@ -815,7 +815,11 @@ print_summary() {
 
     # Show analysis in shell AND log
     # Show analysis: stdout (Markdown) -> Log File, stderr (ASCII) -> Console
-    $ANALYZE_SCRIPT "$LOG_FILE" >> "$LOG_FILE"
+    # We must not redirect >> to LOG_FILE while reading from it in the script,
+    # as this causes contention/permission errors.
+    local analysis_out
+    analysis_out=$($ANALYZE_SCRIPT "$LOG_FILE")
+    echo "$analysis_out" >> "$LOG_FILE"
 
     # Run Failure Analysis
     if [ -f "./agent_env/bin/ADE_analyze_failures.py" ]; then
