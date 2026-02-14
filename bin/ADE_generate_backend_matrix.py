@@ -1,3 +1,7 @@
+# ## @DOC
+# ### Ade Generate Backend Matrix
+# Generates coverage matrix for backend tests.
+
 import json
 import os
 
@@ -46,7 +50,7 @@ def generate_matrix():
         # Ensure we only check files relevant to src
 
         for file_path in cov_data.measured_files():
-            if "src" not in file_path and "papeterie-engine/src" not in file_path:
+            if "src" not in file_path:
                 continue
 
             # Relative path for readability
@@ -69,7 +73,7 @@ def generate_matrix():
     # Aggregate stats per context.
 
     for file_path in cov_data.measured_files():
-        if "src" not in file_path and "papeterie-engine/src" not in file_path:
+        if "src" not in file_path:
             continue
 
         rel_path = os.path.relpath(file_path, os.getcwd())

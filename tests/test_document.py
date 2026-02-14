@@ -1,7 +1,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-DOCUMENT_SCRIPT = Path(__file__).parent.parent / "bin" / "document.py"
+DOCUMENT_SCRIPT = Path(__file__).parent.parent / "bin" / "ADE_document.py"
 
 
 def test_extract_documentation():
@@ -48,7 +48,7 @@ def test_doc_extraction_regex():
     import sys
 
     sys.path.append(str(DOCUMENT_SCRIPT.parent))
-    import document
+    import ADE_document as document
 
     # Mock file content
     # Mock file content
@@ -101,7 +101,7 @@ def test_diagram_link_update():
     import sys
 
     sys.path.append(str(DOCUMENT_SCRIPT.parent))
-    import document
+    import ADE_document as document
 
     with TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)

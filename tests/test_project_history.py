@@ -1,3 +1,9 @@
+# ## @DOC
+# ### Test Project History
+# Tests the functionality of the ADE_project_history script for analyzing code, commits, and generating project history.
+
+
+
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
@@ -44,7 +50,9 @@ def test_get_commits(mock_run):
 
 @patch("subprocess.run")
 def test_get_commits_since(mock_run):
-    mock_run.return_value = MagicMock(stdout="hashNew|2024-01-03|Author 3|Subject 3", returncode=0)
+    mock_run.return_value = MagicMock(
+        stdout="hashNew|2024-01-03|Author 3|Subject 3", returncode=0
+    )
     history_script.get_commits(Path("."), since_commit="hash1")
     # Verify git call includes hash1..HEAD
     args = mock_run.call_args[0][0]
@@ -71,11 +79,12 @@ def test_parse_existing_history():
             assert last == "hashNew"
 
 
+@patch("subprocess.check_output")
 @patch("ADE_project_history.count_lines_file")
 @patch("os.walk")
-def test_run_local_analysis(mock_walk, mock_count):
-    # Mock file system
-    mock_walk.return_value = [(str(Path(".")), [], ["file1.py", "file2.txt"])]
+def test_run_local_analysis(mock_walk, mock_count, mock_git_ls):
+    # Mock git ls-files
+    mock_git_ls.return_value = "file1.py\nfile2.txt"
     mock_count.return_value = (10, 1, 0)  # 10 LOC, 1 TODO
 
     # Mock args
@@ -83,6 +92,7 @@ def test_run_local_analysis(mock_walk, mock_count):
     args.analyze_local = True
     args.markdown = False
     args.dual = False
+    args.validate = False
 
     # Capture stdout
     from io import StringIO

@@ -1,3 +1,8 @@
+# ## @DOC
+# ### Ade List Models
+# Lists available AI models.
+
+
 import os
 
 from dotenv import load_dotenv

@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# ## @DOC
+# ### Ade Update Licenses
+# Updates license information in source files.
+
+
 """
 ADE_update_licenses.py
 
@@ -8,11 +13,18 @@ Consolidated script to:
 3. Merge them into a unified format for the application
 """
 
+import datetime
 import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+def log(msg):
+    """Print message with timestamp."""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {msg}")
+
 
 # Paths
 # This script is in agent_env/bin/
@@ -22,29 +34,58 @@ SRC_WEB_DIR = PROJECT_ROOT / "src" / "web"
 LICENSES_DIR = PROJECT_ROOT / "licenses"
 FRONTEND_LICENSES_FILE = LICENSES_DIR / "frontend-licenses.json"
 BACKEND_LICENSES_FILE = LICENSES_DIR / "backend-licenses.json"
+# Fallback output location if src/web is missing
 OUTPUT_FILE = SRC_WEB_DIR / "src" / "features" / "settings" / "licenses.json"
+if not SRC_WEB_DIR.exists():
+    OUTPUT_FILE = PROJECT_ROOT / "licenses.json"
 
 
 def run_command(cmd, cwd=None, capture_output=True):
     """Run a shell command and return result."""
+    log(f"Running command: {' '.join(cmd)}")
+    if cwd:
+        log(f"  CWD: {cwd}")
+    
     try:
-        result = subprocess.run(cmd, cwd=cwd, capture_output=capture_output, text=True, check=True)
-        return result
+        if capture_output:
+            result = subprocess.run(
+                cmd, cwd=cwd, capture_output=True, text=True, check=True
+            )
+            return result
+        else:
+            # Stream output directly to stdout/stderr
+            result = subprocess.run(
+                cmd, cwd=cwd, text=True, check=True
+            )
+            return result
     except subprocess.CalledProcessError as e:
-        print(f"Error running command: {' '.join(cmd)}")
-        print(f"Stderr: {e.stderr}")
+        log(f"Error running command: {' '.join(cmd)}")
+        if hasattr(e, 'stderr') and e.stderr:
+            print(f"Stderr: {e.stderr}")
         raise
+
 
 
 def generate_frontend_licenses():
     """Run license-checker to generate frontend licenses."""
-    print("Generating Frontend Licenses...")
+    if not SRC_WEB_DIR.exists():
+        log("No frontend (src/web) found. Skipping frontend licenses.")
+        return True
+    # Check for package.json
+    if not (SRC_WEB_DIR / "package.json").exists():
+        log("No package.json found in src/web. Skipping frontend licenses.")
+        return True
+
+    log("Generating Frontend Licenses...")
 
     # Ensure licenses dir exists
     LICENSES_DIR.mkdir(exist_ok=True)
+    log(f"Licenses directory: {LICENSES_DIR}")
+
 
     cmd = [
         "npx",
+        "-y",
         "license-checker",
         "--json",
         "--out",
@@ -59,16 +100,20 @@ def generate_frontend_licenses():
         return False
 
     try:
-        run_command(cmd, cwd=SRC_WEB_DIR)
-        print("✓ Frontend licenses generated.")
+        # For frontend, we want to see what's happening if it hangs
+        run_command(cmd, cwd=SRC_WEB_DIR, capture_output=False)
+        log("✓ Frontend licenses generated.")
         return True
     except subprocess.CalledProcessError:
+        log("Failed to generate frontend licenses.")
         return False
+
 
 
 def generate_backend_licenses():
     """Run pip-licenses to generate backend licenses."""
-    print("Generating Backend Licenses...")
+    log("Generating Backend Licenses...")
+
 
     # Determine pip-licenses command
     venv_pip_licenses = PROJECT_ROOT / ".venv" / "bin" / "pip-licenses"
@@ -85,7 +130,7 @@ def generate_backend_licenses():
     # Prepare command args
     cmd_args = [pip_licenses_cmd]
     if pip_licenses_cmd == "uv":
-        cmd_args = ["uv", "tool", "run", "pip-licenses"]
+        cmd_args = ["uv", "run", "--with", "pip-licenses", "pip-licenses"]
 
     cmd_args.extend(["--format=json", "--with-urls", "--with-authors"])
 
@@ -120,11 +165,13 @@ def generate_backend_licenses():
             transformed[key] = entry
 
         # Write to intermediate file
+        log(f"Writing backend licenses to {BACKEND_LICENSES_FILE}")
         with open(BACKEND_LICENSES_FILE, "w", encoding="utf-8") as f:
             json.dump(transformed, f, indent=2, ensure_ascii=False)
 
-        print(f"✓ Generated {len(transformed)} Python package licenses")
+        log(f"✓ Generated {len(transformed)} Python package licenses")
         return True
+
 
     except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
         print(f"Error generating backend licenses: {e}")
@@ -151,30 +198,27 @@ def merge_licenses():
     print("Merging Licenses...")
 
     try:
-        if not FRONTEND_LICENSES_FILE.exists():
-            print(f"Error: {FRONTEND_LICENSES_FILE} not found.")
-            return False
+        frontend_processed = {}
+        if FRONTEND_LICENSES_FILE.exists():
+            with open(FRONTEND_LICENSES_FILE, "r", encoding="utf-8") as f:
+                frontend_data = json.load(f)
 
-        if not BACKEND_LICENSES_FILE.exists():
+            # Process frontend licenses (add source, fix paths)
+            for key, value in frontend_data.items():
+                new_val = value.copy()
+                new_val["source"] = "frontend"
+                if "path" in new_val:
+                    new_val["path"] = make_path_relative(new_val["path"])
+                if "licenseFile" in new_val:
+                    new_val["licenseFile"] = make_path_relative(new_val["licenseFile"])
+                frontend_processed[key] = new_val
+
+        if BACKEND_LICENSES_FILE.exists():
+            with open(BACKEND_LICENSES_FILE, "r", encoding="utf-8") as f:
+                backend_data = json.load(f)
+        else:
             print(f"Error: {BACKEND_LICENSES_FILE} not found.")
             return False
-
-        with open(FRONTEND_LICENSES_FILE, "r", encoding="utf-8") as f:
-            frontend_data = json.load(f)
-
-        with open(BACKEND_LICENSES_FILE, "r", encoding="utf-8") as f:
-            backend_data = json.load(f)
-
-        # Process frontend licenses (add source, fix paths)
-        frontend_processed = {}
-        for key, value in frontend_data.items():
-            new_val = value.copy()
-            new_val["source"] = "frontend"
-            if "path" in new_val:
-                new_val["path"] = make_path_relative(new_val["path"])
-            if "licenseFile" in new_val:
-                new_val["licenseFile"] = make_path_relative(new_val["licenseFile"])
-            frontend_processed[key] = new_val
 
         # Merge
         merged = {**frontend_processed, **backend_data}
@@ -198,23 +242,37 @@ def merge_licenses():
 
 
 def main():
-    print("========================================")
-    print("Updating Open Source License Information")
-    print("========================================")
-    print(f"Project Root: {PROJECT_ROOT}")
+    log("========================================")
+    log("Updating Open Source License Information")
+    log("========================================")
+    log(f"Project Root: {PROJECT_ROOT}")
 
     if not generate_frontend_licenses():
+        log("Frontend license generation failed.")
         sys.exit(1)
 
     if not generate_backend_licenses():
+        log("Backend license generation failed.")
         sys.exit(1)
 
     if not merge_licenses():
+        log("Merging licenses failed.")
         sys.exit(1)
 
-    print("========================================")
-    print("Success! License information updated.")
-    print("========================================")
+    # Cleanup intermediate files
+    log("Cleaning up intermediate files...")
+    for f in [FRONTEND_LICENSES_FILE, BACKEND_LICENSES_FILE]:
+        if f.exists():
+            log(f"Removing {f}")
+            f.unlink()
+    if LICENSES_DIR.exists() and not any(LICENSES_DIR.iterdir()):
+        log(f"Removing empty {LICENSES_DIR}")
+        LICENSES_DIR.rmdir()
+
+    log("========================================")
+    log("Success! License information updated.")
+    log("========================================")
+
 
 
 if __name__ == "__main__":

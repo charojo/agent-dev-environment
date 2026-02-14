@@ -9,7 +9,7 @@ import pytest
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 BIN_DIR = PROJECT_ROOT / "bin"
-DOCUMENT_SCRIPT = BIN_DIR / "document.py"
+DOCUMENT_SCRIPT = BIN_DIR / "ADE_document.py"
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ def test_document_generation(temp_project, capsys):
     # Let's try importing to avoid path hell with the script location assumption.
 
     sys.path.append(str(BIN_DIR))
-    import document
+    import ADE_document as document
 
     # Mock global variables or params if necessary?
     # process_project takes specific paths so it should be fine.
@@ -97,7 +97,9 @@ def test_document_generation(temp_project, capsys):
     document.GEN_IMAGES_DIR.mkdir(exist_ok=True)
 
     # Re-run structure map part specifically to verify isolation
-    document.generate_structure_map(temp_project, document.GEN_IMAGES_DIR / "structure.svg", {})
+    document.generate_structure_map(
+        temp_project, document.GEN_IMAGES_DIR / "structure.svg", {}
+    )
     assert (document.GEN_IMAGES_DIR / "structure.svg").exists()
 
     # 4. Verify Doxygen

@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ## @DOC
+# ### Test Configurations
+# Tests different configurations by enabling/disabling languages and features, and reports results.
+
+
+
 import json
 import os
 import subprocess
@@ -91,7 +97,9 @@ def main():
             print(f"\n--- Testing Configuration: {cfg['name']} ---")
 
             # 1. Reset pristine (force local for speed)
-            run_command(["bash", "bin/reset_pristine.sh", "--yes", "--force"], cwd=root_dir)
+            run_command(
+                ["bash", "bin/reset_pristine.sh", "--yes", "--force"], cwd=root_dir
+            )
 
             # 2. Configure
             configure_cmd = ["python3", "bin/configure.py", "--non-interactive"]
@@ -114,7 +122,8 @@ def main():
             node_modules_path = root_dir / "node_modules"
 
             python_enabled = "python" in cfg.get("enable_lang", []) or (
-                "python" not in cfg.get("disable_lang", []) and cfg["name"] == "Full (All features)"
+                "python" not in cfg.get("disable_lang", [])
+                and cfg["name"] == "Full (All features)"
             )
             ts_enabled = "typescript" in cfg.get("enable_lang", []) or (
                 "typescript" not in cfg.get("disable_lang", [])
@@ -128,14 +137,19 @@ def main():
                 print("FAILED: node_modules exists but typescript disabled")
 
             # 5. Validate (skip E2E for speed)
-            validation_result = run_command(["bash", "bin/validate.sh", "--fast"], cwd=root_dir)
+            validation_result = run_command(
+                ["bash", "bin/validate.sh", "--fast"], cwd=root_dir
+            )
 
             # 6. Check Validation Log for skipped components
             log_file = root_dir / "logs" / "validation_summary_log.md"
             log_content = log_file.read_text() if log_file.exists() else ""
 
             skipped_correctly = True
-            if not ts_enabled and "JavaScript disabled in config. Skipping" not in log_content:
+            if (
+                not ts_enabled
+                and "JavaScript disabled in config. Skipping" not in log_content
+            ):
                 print("FAILED: Validation log does not mention skipping JS")
                 skipped_correctly = False
 
@@ -174,8 +188,22 @@ def main():
         json.dump(report, f, indent=2)
 
     print("\n--- Configuration Test Summary ---")
-    print(f"| {'Config':<20} | {'Status':<6} | {'Total':<10} | {'Venv':<10} | {'Node':<10} |")
-    print("|" + "-" * 22 + "|" + "-" * 8 + "|" + "-" * 12 + "|" + "-" * 12 + "|" + "-" * 12 + "|")
+    print(
+        f"| {'Config':<20} | {'Status':<6} | {'Total':<10} | {'Venv':<10} | {'Node':<10} |"
+    )
+    print(
+        "|"
+        + "-" * 22
+        + "|"
+        + "-" * 8
+        + "|"
+        + "-" * 12
+        + "|"
+        + "-" * 12
+        + "|"
+        + "-" * 12
+        + "|"
+    )
     for r in report:
         print(
             f"| {r['config']:<20} | {r['status']:<6} | {r['total_size']:<10} | "

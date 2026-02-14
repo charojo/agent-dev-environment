@@ -1,6 +1,11 @@
 #!/bin/bash
+# ## @DOC
+# ### Ade Check Health
+# Checks the health of the development environment.
+
+
 # agent_env/bin/ADE_check_health.sh
-# Verifies that the Papeterie Engine development stack is running.
+# Verifies that the development stack is running.
 # Intended to be run from project root or via relative path.
 
 RED='\033[0;31m'

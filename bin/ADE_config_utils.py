@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# ## @DOC
+# ### Ade Config Utils
+# Query config.toml
+
+
+
 """
 Configuration Utility for Agent Development Environment.
 
@@ -63,21 +69,29 @@ def main():
 
     # Command: get <path>
     get_parser = subparsers.add_parser("get", help="Get a specific value")
-    get_parser.add_argument("path", help="Dot-notation path (e.g. languages.python.enabled)")
+    get_parser.add_argument(
+        "path", help="Dot-notation path (e.g. languages.python.enabled)"
+    )
 
     # Command: get-extras
-    subparsers.add_parser("get-extras", help="Get list of pip extras for enabled features")
+    subparsers.add_parser(
+        "get-extras", help="Get list of pip extras for enabled features"
+    )
 
     # Command: get-markers
-    subparsers.add_parser("get-markers", help="Get pytest markers to EXCLUDE disabled features")
+    subparsers.add_parser(
+        "get-markers", help="Get pytest markers to EXCLUDE disabled features"
+    )
 
     # Command: get-enabled-languages
-    subparsers.add_parser("get-enabled-languages", help="Get list of enabled language keys")
+    subparsers.add_parser(
+        "get-enabled-languages", help="Get list of enabled language keys"
+    )
 
     args = parser.parse_args()
 
     # Determine project root
-    # Valid assumption: this script is in bin/, so root is one level up
+    # Valid assumption: this script is in bin/, so root is two levels up
     root_dir = Path(__file__).resolve().parent.parent
     config = load_config(root_dir)
 

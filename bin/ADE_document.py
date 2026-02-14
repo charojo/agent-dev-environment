@@ -33,7 +33,7 @@ GEN_DOCS_DIR.mkdir(parents=True, exist_ok=True)
 GEN_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 # Regex patterns
-DOC_BLOCK_START = re.compile(r"^\s*## @DOC\s*(.*)$")
+DOC_BLOCK_START = re.compile(r"^\s*(?://\s*)?## @DOC\s*(.*)$")
 DIAGRAM_LINK = re.compile(
     r"(\s*(?:#|//)\s*See architecture:\s*)(\[.*?\]\(.*?\))(\s*<!--\s*@diagram:\s*(.*?)\s*-->)"
 )
@@ -178,7 +178,9 @@ def extract_documentation(root_dir):
                             except (ValueError, FileNotFoundError):
                                 return match.group(0)
 
-                        clean_line = re.sub(r"(!?\[.*?\])\((.*?)\)", fix_link, clean_line)
+                        clean_line = re.sub(
+                            r"(!?\[.*?\])\((.*?)\)", fix_link, clean_line
+                        )
                         current_doc_block.append(clean_line)
 
             if current_doc_block:
@@ -242,7 +244,9 @@ def generate_pdf(input_file, output_file):
         # cmd.extend(["--metadata", f"title={input_file.stem.replace('_', ' ')}"])
         cmd.append("--pdf-engine-opt=--enable-local-file-access")
     elif not shutil.which("pdflatex"):
-        print("Warning: No standard PDF engine (wkhtmltopdf, pdflatex) found. Pandoc might fail.")
+        print(
+            "Warning: No standard PDF engine (wkhtmltopdf, pdflatex) found. Pandoc might fail."
+        )
 
     try:
         subprocess.run(cmd, check=True, cwd=input_file.parent)
@@ -427,7 +431,9 @@ def generate_typedoc(project_path, output_dir, project_name):
                 typedoc_bin = str(root_bin)
 
     if not typedoc_bin:
-        print(f"Warning ⚠️ : 'typedoc' not found for {project_name}. Falling back to Doxygen.")
+        print(
+            f"Warning ⚠️ : 'typedoc' not found for {project_name}. Falling back to Doxygen."
+        )
         return
 
     print(f"Generating TypeDoc for {project_name}...")
@@ -452,7 +458,9 @@ def generate_typedoc(project_path, output_dir, project_name):
         cmd.extend(["--entryPointStrategy", "expand", str(project_path)])
 
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        subprocess.run(
+            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+        )
         print(f"Success ✅: TypeDoc generated in {td_output}")
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode() if e.stderr else "Unknown error"
@@ -578,7 +586,9 @@ def process_project(
             pdf_file = output_dir / f"{prefix}DESIGN_SPEC.pdf"
             generate_pdf(spec_file, pdf_file)
     else:
-        print(f"Note: No ## @DOC blocks found for {project_name}. Skipping Design Spec.")
+        print(
+            f"Note: No ## @DOC blocks found for {project_name}. Skipping Design Spec."
+        )
 
     # Cleanup legacy file if exists
     legacy_spec = DOCS_DIR / "DESIGN_SPEC.md"
@@ -593,7 +603,9 @@ def process_project(
 
     # 5. Generate Doxygen
     if not skip_doxygen:
-        generate_doxygen(project_path, output_dir, project_name, extra_inputs=extra_inputs)
+        generate_doxygen(
+            project_path, output_dir, project_name, extra_inputs=extra_inputs
+        )
 
     # 6. Generate TypeDoc (specialized for TS/JS)
     if not skip_doxygen:
@@ -611,7 +623,9 @@ def generate_structure_map(project_path, output_file, docs):
     print(f"Generating structure map for {project_path.name}...")
 
     dot_content = ["digraph ProjectStructure {"]
-    dot_content.append('  node [shape=box, style=filled, fillcolor=white, fontname="Helvetica"];')
+    dot_content.append(
+        '  node [shape=box, style=filled, fillcolor=white, fontname="Helvetica"];'
+    )
     dot_content.append('  edge [color="#666666"];')
     dot_content.append('  bgcolor="transparent";')
     dot_content.append(f'  label="{project_path.name} Structure";')
@@ -713,7 +727,9 @@ def generate_structure_map(project_path, output_file, docs):
 
     # Render SVG
     try:
-        subprocess.run(["dot", "-Tsvg", str(dot_file), "-o", str(output_file)], check=True)
+        subprocess.run(
+            ["dot", "-Tsvg", str(dot_file), "-o", str(output_file)], check=True
+        )
         print(f"Success ✅: Structure map -> {output_file}")
         # Clean up DOT? Maybe keep for debug.
     except subprocess.CalledProcessError as e:
@@ -757,7 +773,9 @@ def ensure_docs_server_running(root_dir):
 def main():
     global DOCS_DIR, GEN_DOCS_DIR, GEN_IMAGES_DIR
 
-    parser = argparse.ArgumentParser(description="Generate documentation and update links.")
+    parser = argparse.ArgumentParser(
+        description="Generate documentation and update links."
+    )
     parser.add_argument(
         "--pdf",
         action="store_true",
@@ -787,7 +805,9 @@ def main():
 
         ADE_generate_diagrams.main([])
     except ImportError:
-        print("Warning ⚠️ : 'ADE_generate_diagrams' not found. Skipping diagram generation.")
+        print(
+            "Warning ⚠️ : 'ADE_generate_diagrams' not found. Skipping diagram generation."
+        )
     except Exception as e:
         print(f"Warning ⚠️ : Diagram generation failed. {e}")
 
@@ -811,7 +831,11 @@ def main():
     if is_submodule and superproject_root:
         # Instead of scanning all siblings, we focus on 'src' and 'docs' being together
         process_project(
-            superproject_root, GEN_DOCS_DIR, proj_name, args.pdf, skip_doxygen=not api_docs_enabled
+            superproject_root,
+            GEN_DOCS_DIR,
+            proj_name,
+            args.pdf,
+            skip_doxygen=not api_docs_enabled,
         )
 
     update_diagram_links(project_root)

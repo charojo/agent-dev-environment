@@ -1,4 +1,8 @@
 #!/bin/bash
+# ## @DOC
+# ### Ade Analyze
+# Analyzes project codebase and metrics.
+
 # Coverage analysis script
 # Parses validate.log to extract and display coverage metrics
 

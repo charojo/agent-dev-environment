@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
+# ## @DOC
+# ### Ade Check Css Compliance
+# Check CSS compliance
+
+
+
 """
-CSS Compliance Checker for Papeterie Engine.
+CSS Compliance Checker.
 
 Scans JSX components for design system violations:
 - Hardcoded rgba() colors
@@ -137,7 +143,10 @@ def find_background_violations(file_path: Path) -> list[tuple[int, str]]:
                 # If it's a structural token ensuring contrast, opacity breaks it
                 if base_name in VALID_BG_TOKENS or "bg-bg-" in base_name:
                     issues.append(
-                        (i, f"Opacity modifier forbidden on structural token: {full_class}")
+                        (
+                            i,
+                            f"Opacity modifier forbidden on structural token: {full_class}",
+                        )
                     )
 
             # Check for non-standard backgrounds (soft check)
@@ -229,7 +238,9 @@ def scan_for_duplicate_css_rules(file_path: Path) -> list[str]:
     # We will use a regex that finds `selector {` and check if `selector` appears multiple times.
 
     # Refined Regex: `^([.#][a-zA-Z0-9_-]+)\s*\{` (classes/ids at start of line)
-    top_level_selector_re = re.compile(r"^\s*([.#a-zA-Z][a-zA-Z0-9_\s:>-]+)\s*\{", re.MULTILINE)
+    top_level_selector_re = re.compile(
+        r"^\s*([.#a-zA-Z][a-zA-Z0-9_\s:>-]+)\s*\{", re.MULTILINE
+    )
 
     found = []
     for match in top_level_selector_re.finditer(content_no_comments):
@@ -250,7 +261,9 @@ def scan_for_duplicate_css_rules(file_path: Path) -> list[str]:
 def main():
     parser = argparse.ArgumentParser(description="Check CSS compliance")
     parser.add_argument("--output", type=str, help="Output file path")
-    parser.add_argument("--fix", action="store_true", help="Auto-fix issues where possible")
+    parser.add_argument(
+        "--fix", action="store_true", help="Auto-fix issues where possible"
+    )
     args = parser.parse_args()
 
     # Define source directories
@@ -313,7 +326,9 @@ def main():
         threshold = 30 if jsx_file.name in INLINE_STYLE_EXCEPTIONS else 15
         if style_count > threshold:
             style_issues += 1
-            file_issues.append(f"  Excessive inline styles: {style_count} (threshold: {threshold})")
+            file_issues.append(
+                f"  Excessive inline styles: {style_count} (threshold: {threshold})"
+            )
 
         # Check btn-icon overrides
         overrides = find_btn_icon_overrides(jsx_file)

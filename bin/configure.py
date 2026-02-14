@@ -169,7 +169,7 @@ def wizard(root_dir):
     for lang, cfg in languages.items():
         enabled = cfg.get("enabled", False)
         desc = cfg.get("description", "")
-        print(f"LANGUAGE: {lang} (Currently: {'Enabled' if enabled else 'Disabled'})")
+        print(f"LANGUAGES: {lang} (Currently: {'Enabled' if enabled else 'Disabled'})")
         if desc:
             print(f"  Description: {desc}")
         if lang == "typescript":
@@ -187,7 +187,7 @@ def wizard(root_dir):
     for feat, cfg in features.items():
         enabled = cfg.get("enabled", False)
         desc = cfg.get("description", "")
-        print(f"FEATURE: {feat} (Currently: {'Enabled' if enabled else 'Disabled'})")
+        print(f"FEATURES: {feat} (Currently: {'Enabled' if enabled else 'Disabled'})")
         if desc:
             print(f"  Description: {desc}")
         choice = input(f"  Enable {feat}? [Y/n]: ").strip().lower()
@@ -272,7 +272,9 @@ def main():
     parser.add_argument("--enable-feature", action="append", help="Enable a feature")
     parser.add_argument("--disable-feature", action="append", help="Disable a feature")
     parser.add_argument("--non-interactive", action="store_true", help="Bypass prompts")
-    parser.add_argument("--check-diff", action="store_true", help="Check for dependency removals")
+    parser.add_argument(
+        "--check-diff", action="store_true", help="Check for dependency removals"
+    )
     parser.add_argument(
         "--confirm-removal",
         action="store_true",
@@ -348,14 +350,10 @@ def configure_shell_env(root_dir):
     bin_dir = (root_dir / "bin").resolve()
     print("\n--- Shell Configuration ---")
     print(
-        f"Adding '{bin_dir}' to your PATH allows you to run 'validate.sh' and other tools directly."
+        "Adding agent scripts to PATH allows running 'validate.sh' and other tools easily."
     )
 
-    choice = (
-        input("Do you want to add the Agent Environment bin directory to your PATH? [y/N]: ")
-        .strip()
-        .lower()
-    )
+    choice = input("Add to path (adds to ~/.bashrc) [y/N]: ").strip().lower()
     if choice != "y":
         return
 
@@ -383,12 +381,11 @@ def configure_shell_env(root_dir):
             return
 
     # Append
-    print(f"Appending to {rc_file}...")
+    print(f"Adding to {rc_file}...")
     try:
         with open(rc_file, "a") as f:
             f.write(f"\n# Agent Development Environment\n{export_line}\n")
         print("✅ Added to config.")
-        print(f"👉 Please run: source {rc_file}")
     except Exception as e:
         print(f"Error writing to {rc_file}: {e}")
 
@@ -404,10 +401,22 @@ def ensure_templates_installed(root_dir):
     if not docs_dir.exists():
         docs_dir.mkdir(parents=True, exist_ok=True)
 
-    for template_name in ["REQUIREMENTS.md", "ISSUES.md"]:
+    for template_name in ["REQUIREMENTS.md", "ISSUES.md", "PLANS.md"]:
         target_path = docs_dir / template_name
         source_path = templates_dir / template_name
+        project_root_path = project_root / template_name
 
+        # Migration: If file exists in root, move it to docs/
+        if project_root_path.exists():
+            print(f"📦 Moving {template_name} from root to docs/...")
+            if target_path.exists():
+                print(f"  ⚠️  {template_name} already exists in docs/. Backing up root version to {template_name}.old")
+                project_root_path.rename(project_root / f"{template_name}.old")
+            else:
+                project_root_path.rename(target_path)
+                print(f"  ✓ Moved {template_name} to docs/")
+
+        # Installation
         if source_path.exists() and not target_path.exists():
             # Only install if missing. Do not overwrite existing documentation.
             if copy_if_changed(source_path, target_path):
@@ -463,6 +472,9 @@ def ensure_docs_gen_ignored(root_dir):
         if ".agent/" not in content:
             content += f"\n# Agent Metadata\n{agent_dir_entry}"
             needs_write = True
+        if ".coverage" not in content:
+            content += "\n# Global Coverage\n.coverage\n"
+            needs_write = True
 
         if needs_write:
             print("Updating .gitignore...")
@@ -470,7 +482,7 @@ def ensure_docs_gen_ignored(root_dir):
     else:
         print("Creating .gitignore...")
         gitignore_path.write_text(
-            f"# Automated Doc Generation\n{ignore_entry}\n# Agent Metadata\n{agent_dir_entry}"
+            f"# Automated Doc Generation\n{ignore_entry}\n# Agent Metadata\n{agent_dir_entry}\n# Global Coverage\n.coverage\n"
         )
 
 

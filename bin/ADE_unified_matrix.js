@@ -1,3 +1,7 @@
+// ## @DOC
+// ### Ade Unified Matrix
+// Generates a unified test coverage matrix for backend and frontend.
+
 
 const fs = require('fs');
 const path = require('path');

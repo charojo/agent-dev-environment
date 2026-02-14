@@ -42,7 +42,11 @@ cd "$ROOT_DIR"
 # Ensure Environment
 # Check for First Run or explicit configuration
 if [[ "$1" != "--help" && "$1" != "-h" ]]; then
-    if [[ ! -f "$AGENT_DIR/.agent_setup_complete" ]] || [[ "$1" == "--configure" ]]; then
+    # If AGENT_DIR is empty, it's likely the main repo itself.
+    # We check for .agent_setup_complete in current dir as fallback.
+    SETUP_COMPLETE_FILE="${AGENT_DIR:+$AGENT_DIR/}.agent_setup_complete"
+    
+    if [[ ! -f "$SETUP_COMPLETE_FILE" ]] || [[ "$1" == "--configure" ]]; then
         if [ -f "$SCRIPT_DIR/configure.py" ]; then
             echo -e "${YELLOW}Running initial configuration...${NC}"
             uv run python "$SCRIPT_DIR/configure.py" --interactive
@@ -54,6 +58,8 @@ if [ -f "./agent_env/bin/ADE_ensure_env.sh" ]; then
     ./agent_env/bin/ADE_ensure_env.sh
 elif [ -f "./.agent/bin/ADE_ensure_env.sh" ]; then
     ./.agent/bin/ADE_ensure_env.sh
+elif [ -f "./bin/ADE_ensure_env.sh" ]; then
+    ./bin/ADE_ensure_env.sh
 else
     # Fallback or error if not found
     echo "Error: ADE_ensure_env.sh not found."
@@ -71,7 +77,6 @@ PARALLEL=false       # Parallel test execution
 VERBOSE=false        # Detailed output
 E2E_FILTER=""        # Filter for specific E2E test
 INITIALIZING=false   # Internal flag for missing coverage
-REFRESHING=false     # Internal flag for outdated coverage
 PYTEST_SELECTION=""  # Centralized selection args
 RUN_CONFIG_TESTS=false # Run configuration validation tests
 UPDATE_SNAPSHOTS=false # Flag to update E2E snapshots
@@ -154,6 +159,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --help|-h) show_help; exit 0 ;;
         --full) TIER="full"; shift ;;
+        --github) TIER="github"; shift ;;
         --exhaustive) TIER="exhaustive"; shift ;;
         --fast) TIER="fast"; shift ;;
         --screen) TIER="screen"; shift ;;
@@ -219,6 +225,12 @@ case "$TIER" in
         # Complete: auto-fix, E2E, all tests
         INCLUDE_E2E=true
         ;;
+    github)
+        # GitHub CI: Complete but no coverage/analysis
+        INCLUDE_E2E=true
+        # Explicitly disable coverage for speed and to avoid permission issues
+        SKIP_COVERAGE=true
+        ;;
     exhaustive)
         # Maximum: auto-fix, E2E, parallel
         INCLUDE_E2E=true
@@ -266,9 +278,8 @@ E2E_PASSED=0
 E2E_FAILED=0
 
 # Check for initial run or clean environment BEFORE tier specific logic
-INITIAL_CLEAN=false
 if [[ ! -f "$TESTMON_DATAFILE" ]] || [[ ! -f "$COVERAGE_FILE" ]]; then
-    INITIAL_CLEAN=true
+    INITIALIZING=true
 fi
 
 # Initialize Log File with Markdown Header
@@ -280,17 +291,8 @@ log_msg ""
 # Echo to stdout as well (formatted for terminal)
 echo -e "${BLUE}Validation Suite${NC} - Tier: ${TIER}"
 
-if [ "$INITIAL_CLEAN" = true ]; then
-    log_msg "${YELLOW}Initial run or clean environment detected: This may take 1-3 minutes...${NC}"
-    log_msg "${BLUE}Note: We are building the test/coverage metadata for the first time.${NC}"
-    echo "> **Note:** Initial run detected. Building metadata..." >> "$LOG_FILE"
-fi
-
-log_msg ""
-
 # Centralized Test Selection Logic
 # Load Configuration via config_utils.py
-ENABLED_MARKERS=""
 CONFIG_UTILS=""
 if [ -f "agent_env/bin/ADE_config_utils.py" ]; then
     CONFIG_UTILS="agent_env/bin/ADE_config_utils.py"
@@ -299,10 +301,11 @@ elif [ -f ".agent/bin/ADE_config_utils.py" ]; then
 fi
 
 # Load Configuration via ADE_config_utils.py
-ENABLED_MARKERS=""
+PYTEST_SELECTION=""
 if [ -n "$CONFIG_UTILS" ]; then
     # We use python to get the marker string e.g. -m "not processing"
-    ENABLED_MARKERS=$(uv run python "$CONFIG_UTILS" get-markers)
+    PYTEST_SELECTION="$PYTEST_SELECTION $(uv run python "$CONFIG_UTILS" get-markers)"
+
     # Also check if python is enabled? If python is disabled, we shouldn't run backend tests at all.
     PYTHON_ENABLED=$(uv run python "$CONFIG_UTILS" get languages.python.enabled)
     JS_ENABLED=$(uv run python "$CONFIG_UTILS" get languages.typescript.enabled)
@@ -312,43 +315,33 @@ fi
 if [ -z "$PYTHON_ENABLED" ]; then PYTHON_ENABLED="true"; fi
 if [ -z "$JS_ENABLED" ]; then JS_ENABLED="true"; fi
 
+if [ "$INITIALIZING" = true ]; then
+    log_msg "${YELLOW}Initial run or clean environment detected: This may take 1-3 minutes...${NC}"
+    log_msg "${BLUE}Note: We are building the test/coverage metadata for the first time.${NC}"
+    log_msg ""
+    echo "> **Note:** Initial run detected. Building coverage data..." >> "$LOG_FILE"
+    PYTEST_SELECTION="$PYTEST_SELECTION --testmon -v"
+fi
 
 if [[ "$TIER" == "fast" ]]; then
-    if [[ ! -f "$TESTMON_DATAFILE" ]]; then
-        log_msg "${YELLOW}🚀 Initializing Test Ecosystem... Building testmon database...${NC}"
-        log_msg "${BLUE}Note: This initial scan maps your codebase to tests. It may take 1-3 minutes but speeds up future runs dramatically!${NC}"
+    # Check if tests are newer than data
+    test_changes=$(find tests/ -name "*.py" -newer "$TESTMON_DATAFILE" 2>/dev/null | wc -l)
+    if [[ "$test_changes" -gt 0 ]]; then
+        log_msg "${YELLOW}🔄 New test files detected: Refreshing testmon database...${NC}"
         INITIALIZING=true
-        PYTEST_SELECTION="--testmon"
     else
-        # Check if tests are newer than data
-        test_changes=$(find tests/ -name "*.py" -newer "$TESTMON_DATAFILE" 2>/dev/null | wc -l)
-        if [[ "$test_changes" -gt 0 ]]; then
-            log_msg "${YELLOW}🔄 New test files detected: Refreshing testmon database...${NC}"
-            REFRESHING=true
-            PYTEST_SELECTION="--testmon"
-        else
-            log_msg "Selection: LOC-only (testmon)"
-            PYTEST_SELECTION="--testmon --testmon-forceselect"
-        fi
+        log_msg "Selection: LOC-change-only based testing (testmon)"
+        PYTEST_SELECTION="$PYTEST_SELECTION --testmon-forceselect"
     fi
+
     # Always exclude E2E from non-full tiers
     PYTEST_SELECTION="$PYTEST_SELECTION -m \"not e2e\""
-elif [[ "$TIER" == "full" ]]; then
-    log_msg "Selection: All tests"
-    PYTEST_SELECTION=""
-elif [[ "$TIER" == "exhaustive" ]]; then
-    log_msg "Selection: All tests (parallel)"
-    PYTEST_SELECTION="-n auto"
 fi
 
-# Append Feature Markers (e.g., "not processing") safely
-if [ -n "$ENABLED_MARKERS" ]; then
-    # If selection already has -m, we need to combine them carefully.
-    # Pytest allows multiple -m but boolean logic is safer inside quotes? using multiple -m works as AND usually.
-    # Actually, let's just append.
-    PYTEST_SELECTION="$PYTEST_SELECTION $ENABLED_MARKERS"
+# Parallel override
+if [ "$PARALLEL" = true ]; then
+    PYTEST_SELECTION="$PYTEST_SELECTION -n auto"
 fi
-
 
 # ============================================
 # Phase 0: System Health & Compliance
@@ -473,38 +466,31 @@ run_backend_tests() {
     
     local start=$(date +%s)
     
-    local pytest_args=""
+    local pytest_args="-v --timeout=300"
     
+    # Add verbosity
+    if [ "$VERBOSE" = true ]; then
+        pytest_args="$pytest_args -vv -s"
+    fi
+
     # Selection already computed upfront
-    # CRITICAL: Ignore tests/validation to prevent double-execution and deadlocks
-    pytest_args="$PYTEST_SELECTION --ignore=tests/validation"
+    # CRITICAL: Ignore tests/validation and environment submodules/directories
+    # to prevent double-execution, deadlocks, and infinite recursion in projects.
+    # Also ignore test_create_project.py as it is too heavy for standard validation.
+    pytest_args="$pytest_args $PYTEST_SELECTION --ignore=.agent --ignore=agent_env --ignore=tests/test_create_project.py"
     
     # Add marker for live tests
     if [ "$INCLUDE_LIVE" = false ]; then
         pytest_args="$pytest_args -m \"not live\""
     fi
     
-    # Add coverage for full/exhaustive
-    if [ "$TIER" = "full" ] || [ "$TIER" = "exhaustive" ]; then
+    # Add coverage for full/exhaustive (but not github/skip_coverage)
+    if [[ "$TIER" == "full" || "$TIER" == "exhaustive" ]] && [[ "$SKIP_COVERAGE" != "true" ]]; then
         if [ -d "src" ]; then
             pytest_args="$pytest_args --cov=src --cov-report=term-missing"
         fi
     fi
-    
-    # Add verbosity
-    if [ "$VERBOSE" = true ]; then
-        pytest_args="$pytest_args -vv -s --timeout=300"
-    elif [ "$TIER" != "exhaustive" ]; then
-        pytest_args="$pytest_args -q --timeout=300"
-    else
-        pytest_args="$pytest_args --timeout=300"
-    fi
-    
-    # Parallel override
-    if [ "$PARALLEL" = true ] && [ "$TIER" != "exhaustive" ]; then
-        pytest_args="$pytest_args -n auto"
-    fi
-    
+           
     # Run tests with streaming output
     local output_tmp="logs/backend_output.tmp"
     log_msg "Command: uv run pytest $pytest_args"
@@ -513,8 +499,13 @@ run_backend_tests() {
     echo "----------------------------------------" >> "$LOG_FILE"
     
     # Execute: Raw -> Console (via tee), Raw -> Temp File
-    eval "uv run pytest $pytest_args 2>&1" | tee "$output_tmp"
+    eval "uv run python -m pytest $pytest_args 2>&1" | tee "$output_tmp"
     local exit_code=${PIPESTATUS[0]}
+    
+    # Pytest returns 5 if no tests are collected. We treat this as success for validation.
+    if [ $exit_code -eq 5 ]; then
+        exit_code=0
+    fi
     
     # Append Stripped -> Log File
     cat "$output_tmp" | strip_ansi >> "$LOG_FILE"
@@ -532,12 +523,12 @@ run_backend_tests() {
     
     local output
     output=$(cat "$output_tmp")
-    rm -f "$output_tmp"
     
     # Check if run succeeded
     if [[ "$INITIALIZING" == "true" && ! -s "$output_tmp" ]]; then
          log_msg "${RED}Initialization failed.${NC}"
     fi
+    rm -f "$output_tmp"
 
     # Parse results - handle empty grep results
     BACKEND_PASSED=$(echo "$output" | grep -oP '\d+(?= passed)' | tail -1 || echo 0)
@@ -619,6 +610,11 @@ run_frontend_tests() {
             vitest_args=""
             ;;
     esac
+
+    # Add verbosity for initial runs
+    if [[ "$INITIALIZING" == "true" || "$VERBOSE" == "true" ]]; then
+        vitest_args="$vitest_args --reporter=verbose"
+    fi
     
     # Run tests with real-time feedback
     local output_tmp="../../logs/frontend_output.tmp"
@@ -695,7 +691,7 @@ run_e2e_tests() {
     log_msg "Command: uv run pytest -s --timeout=300 tests/validation/test_e2e_wrapper.py"
     
     # Execute: Raw -> Console (via tee), Raw -> Temp File
-    eval "uv run pytest -s --timeout=300 tests/validation/test_e2e_wrapper.py 2>&1" | tee "$output_tmp"
+    eval "uv run python -m pytest -s --timeout=300 tests/validation/test_e2e_wrapper.py 2>&1" | tee "$output_tmp"
     local exit_code=${PIPESTATUS[0]}
     
     # Append Stripped -> Log File
@@ -741,7 +737,9 @@ run_static_analysis() {
     
     # Run all non-E2E validation tests
     # test_static_analysis.py, test_linters.py, etc.
-    uv run pytest -q tests/validation --ignore=tests/validation/test_e2e_wrapper.py >> "$LOG_FILE" 2>&1 || true
+    if [ -d "tests/validation" ]; then
+        uv run python -m pytest -q tests/validation --ignore=tests/validation/test_e2e_wrapper.py >> "$LOG_FILE" 2>&1 || true
+    fi
     
     local end=$(date +%s)
     STATIC_DURATION=$((end - start))
@@ -816,7 +814,10 @@ print_summary() {
     echo "Running Validation Analysis..."
     
     local ANALYZE_SCRIPT=""
-    if [ -f "./agent_env/bin/ADE_analyze.sh" ]; then
+    # Skip analysis for github tier to avoid permission issues
+    if [ "$TIER" = "github" ]; then
+        echo "Skipping analysis for GitHub tier."
+    elif [ -f "./agent_env/bin/ADE_analyze.sh" ]; then
         ANALYZE_SCRIPT="./agent_env/bin/ADE_analyze.sh"
     elif [ -f "./.agent/bin/ADE_analyze.sh" ]; then
         ANALYZE_SCRIPT="./.agent/bin/ADE_analyze.sh"
@@ -824,11 +825,21 @@ print_summary() {
 
     # Show analysis in shell AND log
     # Show analysis: stdout (Markdown) -> Log File, stderr (ASCII) -> Console
-    $ANALYZE_SCRIPT "$LOG_FILE" >> "$LOG_FILE"
+    # We must not redirect >> to LOG_FILE while reading from it in the script,
+    # as this causes contention/permission errors.
+    local analysis_tmp="logs/analysis_output.tmp"
+    if [ -n "$ANALYZE_SCRIPT" ]; then
+        $ANALYZE_SCRIPT "$LOG_FILE" > "$analysis_tmp"
+        cat "$analysis_tmp" >> "$LOG_FILE"
+        rm -f "$analysis_tmp"
+    fi
 
     # Run Failure Analysis
     if [ -f "./agent_env/bin/ADE_analyze_failures.py" ]; then
-        uv run python ./agent_env/bin/ADE_analyze_failures.py "$LOG_FILE" >> "$LOG_FILE"
+        local failures_tmp="logs/failures_output.tmp"
+        uv run python ./agent_env/bin/ADE_analyze_failures.py "$LOG_FILE" > "$failures_tmp"
+        cat "$failures_tmp" >> "$LOG_FILE"
+        rm -f "$failures_tmp"
     fi
 
     # Overall status

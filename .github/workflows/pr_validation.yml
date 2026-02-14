@@ -34,4 +34,4 @@ jobs:
         run: touch .agent_setup_complete
 
       - name: Run Validation
-        run: ./bin/validate.sh --full
+        run: ./bin/validate.sh --github

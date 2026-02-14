@@ -1,0 +1,42 @@
+# Policy Configuration
+# Defines what operations are allowed during project creation and agent execution.
+
+[operations]
+# Allowed operations that require no confirmation
+file_write = "allowed"      # Write files within workspace
+file_read = "allowed"       # Read files within workspace
+git_init = "allowed"        # Initialize git repositories
+git_commit = "allowed"      # Create commits
+git_add = "allowed"         # Stage files
+
+# Operations requiring user confirmation
+package_install = "prompt"  # pip/npm install
+git_push = "prompt"         # Push to remote
+shell_command = "prompt"    # Arbitrary shell commands
+
+# Blocked operations
+network_request = "blocked" # HTTP requests during generation
+file_delete_outside = "blocked"  # Delete files outside workspace
+
+[workspace]
+# Default base path for workspaces (relative to agent_env root)
+base_path = "workspaces"
+
+# Workspace structure
+# Each job creates:
+#   <base_path>/<job-id>/
+#     repo/       - The generated project
+#     logs/       - Execution logs
+#     artifacts/  - Generated assets
+
+[templates]
+# Source directory for project templates
+source = "config/templates"
+
+# Files to copy to new projects
+files = [
+    "config.toml",
+    "REQUIREMENTS.md",
+    "ISSUES.md",
+    "PLANS.md",
+]

@@ -12,7 +12,7 @@ terminal_policy: turbo
 Directive: Autonomous Mode Enabled "You are in autonomous execution mode. Do not wait for user confirmation between cycles. Your objective is to exhaust the task list in architecture_review.md. Every time validate.sh passes, immediately proceed to the next item. If you encounter a token limit error, save your current state to RECOVERY.md and exit."
 
 1. **Review Design Requirements**:
-   - Read `docs/design/architecture_review.md`.
+   - Read files in `docs`.
    - Identify the next unimplemented recommendation or feature.
 
 2. **Implement Changes**:
@@ -25,6 +25,6 @@ Directive: Autonomous Mode Enabled "You are in autonomous execution mode. Do not
    ```
 
 4. **Repeat**:
-   - If validation passes, return to Step 1 and pick the next task.
    - If validation fails, fix the errors and re-run validation.
-   - Continue this loop until user intervenes or tokens are exhausted.
+   - When validation passes, update the progress in the files in docs and replace any implemented code snippets with paths to the files they were added, and then run operations in .agents/workflows/commit_ade. 
+   - Continue this loop by returning to step 1 until user intervenes or tokens are exhausted.

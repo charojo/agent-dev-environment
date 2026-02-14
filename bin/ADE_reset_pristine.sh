@@ -1,4 +1,9 @@
 #!/bin/bash
+# ## @DOC
+# ### Ade Reset Pristine
+# Resets the environment to a pristine state.
+
+
 # Pristine Reset Script
 # RESETS THE REPOSITORY TO A FRESH STATE.
 

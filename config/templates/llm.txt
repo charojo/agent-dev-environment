@@ -1,0 +1,13 @@
+# [Project Name]
+
+> [Description]
+
+## Essential Documentation
+- [Main Readme](README.md)
+- [How to Use](docs/HOWTO_UseAgentDev.md)
+- [Gemini Context](docs/agents_template.md)
+
+## Navigation
+- [Source Code](/src)
+- [Tests](/tests)
+- [Agent Tools](/agent_env)

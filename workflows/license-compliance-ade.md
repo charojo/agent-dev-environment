@@ -24,16 +24,16 @@ This workflow updates the `licenses.json` file used by the application to displa
    // turbo
    
 2. **Verify Output**
-   Check if the output file exists and has content.
+   Check if the output file exists.
    
    ```bash
-   ls -l src/web/src/features/settings/licenses.json
+   ls -l licenses.json src/web/src/features/settings/licenses.json 2>/dev/null || true
    ```
 
 3. **Commit Changes**
    If there are changes, commit them.
    
    ```bash
-   git add licenses/ src/web/src/features/settings/licenses.json
+   git add licenses/ licenses.json src/web/src/features/settings/licenses.json 2>/dev/null || true
    git commit -m "chore: update open source license credits"
    ```

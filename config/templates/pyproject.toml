@@ -1,0 +1,35 @@
+[project]
+name = "your-project-name"
+version = "0.0.1"
+description = ""
+requires-python = ">=3.10"
+dependencies = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-testmon>=2.0.0",
+    "pytest-timeout>=2.1.0",
+    "pytest-xdist>=3.0.0",
+    "ruff>=0.1.0",
+    "tomli>=2.0.0",
+]
+
+[dependency-groups]
+dev = []
+
+[tool.pytest.ini_options]
+pythonpath = "."
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (live api)"
+]
+norecursedirs = [".agent", "agent_env", "node_modules", ".venv"]
+
+[tool.ruff]
+exclude = [
+    ".agent",
+    "agent_env",
+    ".git",
+    ".venv",
+    "node_modules",
+]
+line-length = 88
