@@ -1,6 +1,6 @@
 # Agent Dev Environment — Requirements
 
-## Project Automation Tooling (v0.0.4)
+## Project Automation Tooling (v0.0.5)
 
 Requirements for the `create-project` script feature of **this** project.
 

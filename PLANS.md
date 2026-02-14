@@ -1,6 +1,6 @@
 # Agent Dev Environment — Plans
 
-## Current Focus: Project Automation Tooling (v0.0.4)
+## Current Focus: Project Automation Tooling (v0.0.5)
 
 Build the **create-project** infrastructure that bootstraps new repositories with agent_env as a submodule.
 
