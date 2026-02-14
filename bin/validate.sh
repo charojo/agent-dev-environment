@@ -817,13 +817,17 @@ print_summary() {
     # Show analysis: stdout (Markdown) -> Log File, stderr (ASCII) -> Console
     # We must not redirect >> to LOG_FILE while reading from it in the script,
     # as this causes contention/permission errors.
-    local analysis_out
-    analysis_out=$($ANALYZE_SCRIPT "$LOG_FILE")
-    echo "$analysis_out" >> "$LOG_FILE"
+    local analysis_tmp="logs/analysis_output.tmp"
+    $ANALYZE_SCRIPT "$LOG_FILE" > "$analysis_tmp"
+    cat "$analysis_tmp" >> "$LOG_FILE"
+    rm -f "$analysis_tmp"
 
     # Run Failure Analysis
     if [ -f "./agent_env/bin/ADE_analyze_failures.py" ]; then
-        uv run python ./agent_env/bin/ADE_analyze_failures.py "$LOG_FILE" >> "$LOG_FILE"
+        local failures_tmp="logs/failures_output.tmp"
+        uv run python ./agent_env/bin/ADE_analyze_failures.py "$LOG_FILE" > "$failures_tmp"
+        cat "$failures_tmp" >> "$LOG_FILE"
+        rm -f "$failures_tmp"
     fi
 
     # Overall status
