@@ -159,6 +159,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --help|-h) show_help; exit 0 ;;
         --full) TIER="full"; shift ;;
+        --github) TIER="github"; shift ;;
         --exhaustive) TIER="exhaustive"; shift ;;
         --fast) TIER="fast"; shift ;;
         --screen) TIER="screen"; shift ;;
@@ -223,6 +224,12 @@ case "$TIER" in
     full)
         # Complete: auto-fix, E2E, all tests
         INCLUDE_E2E=true
+        ;;
+    github)
+        # GitHub CI: Complete but no coverage/analysis
+        INCLUDE_E2E=true
+        # Explicitly disable coverage for speed and to avoid permission issues
+        SKIP_COVERAGE=true
         ;;
     exhaustive)
         # Maximum: auto-fix, E2E, parallel
@@ -477,8 +484,8 @@ run_backend_tests() {
         pytest_args="$pytest_args -m \"not live\""
     fi
     
-    # Add coverage for full/exhaustive
-    if [ "$TIER" = "full" ] || [ "$TIER" = "exhaustive" ]; then
+    # Add coverage for full/exhaustive (but not github/skip_coverage)
+    if [[ "$TIER" == "full" || "$TIER" == "exhaustive" ]] && [[ "$SKIP_COVERAGE" != "true" ]]; then
         if [ -d "src" ]; then
             pytest_args="$pytest_args --cov=src --cov-report=term-missing"
         fi
@@ -807,7 +814,10 @@ print_summary() {
     echo "Running Validation Analysis..."
     
     local ANALYZE_SCRIPT=""
-    if [ -f "./agent_env/bin/ADE_analyze.sh" ]; then
+    # Skip analysis for github tier to avoid permission issues
+    if [ "$TIER" = "github" ]; then
+        echo "Skipping analysis for GitHub tier."
+    elif [ -f "./agent_env/bin/ADE_analyze.sh" ]; then
         ANALYZE_SCRIPT="./agent_env/bin/ADE_analyze.sh"
     elif [ -f "./.agent/bin/ADE_analyze.sh" ]; then
         ANALYZE_SCRIPT="./.agent/bin/ADE_analyze.sh"
