@@ -172,8 +172,12 @@ def process_markdown_diagrams(project_root, check_only=False):
         if "node_modules" in str(md_file) or "/." in str(md_file):
             continue
             
-        with open(md_file, "r", encoding="utf-8") as f:
-            content = f.read()
+        try:
+            with open(md_file, "r", encoding="utf-8") as f:
+                content = f.read()
+        except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
+            print(f"  Warning: Could not read {md_file}: {e}")
+            continue
             
         new_content_fragments = []
         last_idx = 0

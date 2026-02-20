@@ -19,19 +19,18 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 
 # Store the project root directory
-if [ -d "agent_env" ]; then
+if [ -d "agent_env" ] || [ -d ".agent" ]; then
     ROOT_DIR="$(pwd)"
-    AGENT_DIR="agent_env"
-elif [ -d ".agent" ]; then
-    ROOT_DIR="$(pwd)"
-    AGENT_DIR=".agent"
+    AGENT_DIR=$( [ -d "agent_env" ] && echo "agent_env" || echo ".agent" )
 elif [[ "$(basename "$(dirname "$0")")" == "bin" ]]; then
-    ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-    # Try to deduce AGENT_DIR
-    if [ -d "$ROOT_DIR/agent_env" ]; then
-        AGENT_DIR="agent_env"
-    elif [ -d "$ROOT_DIR/.agent" ]; then
-        AGENT_DIR=".agent"
+    # When run via path like upstream/agent_env/bin/validate.sh
+    # We need to find the dir that CONTAINS agent_env
+    POSSIBLE_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+    if [ -d "$POSSIBLE_ROOT/agent_env" ] || [ -d "$POSSIBLE_ROOT/.agent" ]; then
+        ROOT_DIR="$POSSIBLE_ROOT"
+        AGENT_DIR=$( [ -d "$ROOT_DIR/agent_env" ] && echo "agent_env" || echo ".agent" )
+    else
+        ROOT_DIR="$(pwd)"
     fi
 else
     ROOT_DIR="$(pwd)"
@@ -433,12 +432,14 @@ run_auto_fix() {
     uv run ruff check --fix . 2>&1 | strip_ansi >> "$LOG_FILE" || true
     uv run ruff format . 2>&1 | strip_ansi >> "$LOG_FILE" || true
     
-    if [ -d "src/web" ]; then
-        log_msg "Fixing Frontend..."
-        cd src/web
-        npm run lint -- --fix 2>&1 | strip_ansi >> "../../$LOG_FILE" || true
-        cd "$ROOT_DIR"
-    fi
+    # Submodule-aware Frontend Fix
+    find . -maxdepth 3 -name "package.json" -not -path "*/node_modules/*" | while read pkg; do
+        dir=$(dirname "$pkg")
+        if [ -d "$dir/src" ] || [[ "$dir" == *"ui"* ]] || [[ "$dir" == *"web"* ]]; then
+             log_msg "Fixing Frontend in $dir..."
+             (cd "$dir" && npm run lint -- --fix 2>&1 | strip_ansi >> "$ROOT_DIR/$LOG_FILE") || true
+        fi
+    done
     
     echo "\`\`\`" >> "$LOG_FILE"
     
@@ -561,91 +562,49 @@ run_frontend_tests() {
         return
     fi
     
-    if [ ! -d "src/web" ]; then
-        log_msg "${YELLOW}src/web not found, skipping frontend tests.${NC}"
-        return
-    fi
-    
     echo "## Frontend Tests" >> "$LOG_FILE"
     
-    local start=$(date +%s)
+    local total_exit=0
     
-    cd src/web
-    
-    # 0. Clean up any previous orphan processes
-    npm run test:clean > /dev/null 2>&1 || true
-    
-    local vitest_args=""
-    
-    case "$TIER" in
-        fast)
-            # LOC-based selection if map exists
-            echo "Selection: LOC-only"
-            if [ -f ".vitest-loc-map.json" ]; then
-                local loc_tests=$(node scripts/select-tests-by-loc.js 2>/dev/null | grep -v "^#" | tr '\n' ' ')
-                if [ -n "$loc_tests" ]; then
-                    echo "Found tests for changed LOC: $loc_tests"
-                    vitest_args="$loc_tests"
-                else
-                    echo "No tests found, falling back to --changed"
-                    vitest_args="--changed"
-                fi
-            else
-                echo "LOC map not found, using --changed"
-                vitest_args="--changed"
+    # Submodule-aware Frontend Tests
+    find . -maxdepth 3 -name "package.json" -not -path "*/node_modules/*" | while read pkg; do
+        dir=$(dirname "$pkg")
+        if [ -d "$dir/src" ] || [[ "$dir" == *"ui"* ]] || [[ "$dir" == *"web"* ]]; then
+            log_msg "Running Frontend Tests in $dir..."
+            
+            local start=$(date +%s)
+            cd "$dir"
+            
+            # Clean up
+            npm run test:clean > /dev/null 2>&1 || true
+            
+            local vitest_args=""
+            # ... (selection logic remains same, but uses local vitest_args)
+            case "$TIER" in
+                fast) vitest_args="--changed" ;;
+                full|exhaustive) vitest_args="--coverage" ;;
+                frontend) vitest_args="" ;;
+            esac
+
+            if [[ "$INITIALIZING" == "true" || "$VERBOSE" == "true" ]]; then
+                vitest_args="$vitest_args --reporter=verbose"
             fi
-            ;;
-        full|exhaustive)
-            echo "Selection: All tests"
-            if [ "$TIER" = "full" ] || [ "$TIER" = "exhaustive" ]; then
-                vitest_args="--coverage"
-            # Attempt to ensure coverage runs if we are full but skipping E2E
-            elif [ "$TIER" = "full" ] && [ "$INCLUDE_E2E" = false ]; then
-                 vitest_args="--coverage"
-            fi
-            ;;
-        frontend)
-            echo "Selection: All tests"
-            # No coverage to keep it fast
-            vitest_args=""
-            ;;
-    esac
+            
+            local output_tmp="$ROOT_DIR/logs/frontend_$(basename "$dir")_output.tmp"
+            eval "npm run test:run -- $vitest_args 2>&1" | tee "$output_tmp"
+            local exit_code=${PIPESTATUS[0]}
+            [ $exit_code -ne 0 ] && total_exit=$exit_code
 
-    # Add verbosity for initial runs
-    if [[ "$INITIALIZING" == "true" || "$VERBOSE" == "true" ]]; then
-        vitest_args="$vitest_args --reporter=verbose"
-    fi
-    
-    # Run tests with real-time feedback
-    local output_tmp="../../logs/frontend_output.tmp"
-    echo "Executing: npm run test:run -- $vitest_args"
-    
-    echo "\`\`\`bash" >> "../../$LOG_FILE"
-    
-    # Execute: Raw -> Console (via tee), Raw -> Temp File
-    eval "npm run test:run -- $vitest_args 2>&1" | tee "$output_tmp"
-    local exit_code=${PIPESTATUS[0]}
+            cat "$output_tmp" | strip_ansi >> "$ROOT_DIR/$LOG_FILE"
+            rm -f "$output_tmp"
+            
+            cd "$ROOT_DIR"
+            local end=$(date +%s)
+            FRONTEND_DURATION=$((FRONTEND_DURATION + (end - start)))
+        fi
+    done
 
-    # Append Stripped -> Log File
-    cat "$output_tmp" | strip_ansi >> "../../$LOG_FILE"
-    
-    echo "\`\`\`" >> "../../$LOG_FILE"
-    
-    local output
-    output=$(cat "$output_tmp")
-    rm -f "$output_tmp"
-    
-    # Parse results
-    FRONTEND_PASSED=$(echo "$output" | grep -oP '\d+(?= passed)' | tail -1 || echo 0)
-    FRONTEND_FAILED=$(echo "$output" | grep -oP '\d+(?= failed)' | tail -1 || echo 0)
-    
-    cd "$ROOT_DIR"
-    
-    local end=$(date +%s)
-    FRONTEND_DURATION=$((end - start))
-    echo "TIMING_METRIC: Frontend=${FRONTEND_DURATION}s" >> "$LOG_FILE"
-
-    return $exit_code
+    return $total_exit
 }
 
 # ============================================

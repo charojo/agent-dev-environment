@@ -47,14 +47,25 @@ def get_project_root():
 def get_git_files(root_dir):
     """Get list of files tracked by git or untracked but not ignored."""
     try:
-        result = subprocess.run(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+        # Tracked files (recursively through submodules)
+        tracked = subprocess.run(
+            ["git", "ls-files", "--cached", "--recurse-submodules"],
             cwd=root_dir,
             capture_output=True,
             text=True,
             check=True,
-        )
-        return result.stdout.splitlines()
+        ).stdout.splitlines()
+        
+        # Untracked files (root level only, as --recurse-submodules + --others is buggy in some git versions)
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=root_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.splitlines()
+        
+        return list(set(tracked + untracked))
     except subprocess.CalledProcessError as e:
         print(f"Error running git ls-files: {e}")
         return []

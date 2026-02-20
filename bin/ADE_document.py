@@ -120,7 +120,8 @@ def extract_documentation(root_dir):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     lines = f.readlines()
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, FileNotFoundError, PermissionError) as e:
+                print(f"  Warning: Could not read {file_path}: {e}")
                 continue
 
             current_doc_block = []
