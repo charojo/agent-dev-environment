@@ -285,6 +285,15 @@ def process_markdown_diagrams(project_root, check_only=False):
 
             replacement = (
                 f"figure {diagram_count}: {caption}\n\n"
+                f"<details>\n<summary>Mermaid Source</summary>\n\n"
+                f"```mermaid\n"
+                f"{block_content}\n"
+                f"```\n\n"
+                f"</details>\n\n"
+                f"![figure {diagram_count}: {caption}]({rel_svg_path})\n"
+                f"[figure {diagram_count}: {caption} source]({rel_src_path})"
+            ) if source_ext == ".mmd" else (
+                f"figure {diagram_count}: {caption}\n\n"
                 f"![figure {diagram_count}: {caption}]({rel_svg_path})\n"
                 f"[figure {diagram_count}: {caption} source]({rel_src_path})"
             )

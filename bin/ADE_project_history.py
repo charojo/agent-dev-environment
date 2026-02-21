@@ -28,6 +28,11 @@ try:
 except ImportError:
     pass
 
+try:
+    from ADE_ownership import is_repo_owned_by_current_user
+except ImportError:
+    def is_repo_owned_by_current_user(path): return True
+
 
 def run_git_command(args, cwd):
     """Run a git command and return the output."""
@@ -269,6 +274,39 @@ def run_local_analysis(target_repo_root, ade_root, args):
             results[lang]["loc"] += loc
             results[lang]["todos"] += todos
             results[lang]["fixmes"] += fixmes
+
+    # --- Submodule Inclusion ---
+    try:
+        submodule_output = subprocess.check_output(
+            ["git", "submodule", "status"], cwd=target_repo_root, text=True
+        ).splitlines()
+        for line in submodule_output:
+            # -hash path (branch)
+            #  hash path (branch)
+            parts = line.strip().split()
+            if len(parts) >= 2:
+                sub_path_rel = parts[1]
+                sub_path_abs = target_repo_root / sub_path_rel
+                if sub_path_abs.exists() and is_repo_owned_by_current_user(str(sub_path_abs)):
+                    # Analyze files in submodule
+                    sub_files = subprocess.check_output(
+                        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+                        cwd=sub_path_abs, text=True
+                    ).splitlines()
+                    for f_rel in sub_files:
+                        _, f_ext = os.path.splitext(f_rel)
+                        if f_ext in enabled_extensions:
+                            lang = enabled_extensions[f_ext]
+                            f_path = sub_path_abs / f_rel
+                            if os.path.basename(f_rel) in ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "poetry.lock"]:
+                                continue
+                            loc, todos, fixmes = count_lines_file(f_path)
+                            results[lang]["files"] += 1
+                            results[lang]["loc"] += loc
+                            results[lang]["todos"] += todos
+                            results[lang]["fixmes"] += fixmes
+    except Exception as e:
+        print(f"Warning: Failed to process submodules in local analysis: {e}", file=sys.stderr)
 
     # Output
     sorted_langs = sorted(results.keys())
@@ -680,6 +718,59 @@ def run_history_analysis(target_repo_root, ade_root, args):
                     ]:
                         stats["loc_json"] += loc
 
+        # --- Submodule Inclusion (History) ---
+        try:
+            # 160000 commit <hash>\t<path>
+            tree_output = run_git_command(["ls-tree", "-r", commit["hash"]], cwd)
+            if tree_output:
+                for line in tree_output.splitlines():
+                    if " commit " in line:
+                        parts = line.strip().split()
+                        if len(parts) >= 4:
+                            # 160000 commit hash path
+                            sub_hash = parts[2]
+                            sub_path_rel = parts[3]
+                            sub_path_abs = cwd / sub_path_rel
+                            
+                            # Only parse if owned and checked out
+                            if sub_path_abs.exists() and is_repo_owned_by_current_user(str(sub_path_abs)):
+                                # Get files in submodule at THAT sub_hash
+                                sub_files_output = run_git_command(["ls-tree", "-r", "--name-only", sub_hash], sub_path_abs)
+                                if sub_files_output:
+                                    for f_sub in sub_files_output.splitlines():
+                                        f_ext = os.path.splitext(f_sub)[1]
+                                        if f_ext in lang_map:
+                                            f_content = get_file_content_git(sub_path_abs, sub_hash, f_sub)
+                                            loc, todos, fixmes = analyze_content(f_content)
+                                            lang = lang_map[f_ext]
+                                            
+                                            if lang == "markdown":
+                                                stats["md_todos"] += todos
+                                                stats["md_fixmes"] += fixmes
+                                            else:
+                                                stats["todos"] += todos
+                                                stats["fixmes"] += fixmes
+                                                
+                                            is_f_test = is_test_file(f_sub)
+                                            if is_f_test:
+                                                stats["test_files"] += 1
+                                                stats["test_loc_total"] += loc
+                                                if lang == "python": stats["test_loc_py"] += loc
+                                                elif lang in ["typescript", "javascript"]: stats["test_loc_ts"] += loc
+                                                elif lang == "shell": stats["test_loc_sh"] += loc
+                                            else:
+                                                stats["loc_total"] += loc
+                                                if lang == "python": stats["loc_py"] += loc
+                                                elif lang in ["typescript", "javascript"]: stats["loc_ts"] += loc
+                                                elif lang == "markdown": stats["loc_md"] += loc
+                                                elif lang == "css": stats["loc_css"] += loc
+                                                elif lang == "shell": stats["loc_sh"] += loc
+                                                elif lang == "json":
+                                                    if os.path.basename(f_sub) not in ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "poetry.lock"]:
+                                                        stats["loc_json"] += loc
+        except Exception as e:
+            pass
+
         daily_data[stats["date"]] = stats
 
     print("\nAnalysis complete.", file=sys.stderr)
@@ -727,173 +818,13 @@ def run_history_analysis(target_repo_root, ade_root, args):
     # Generate Charts
     charts = []
 
-    # SVG Generator Class (Embedded to avoid dependencies)
-    class SimpleSVGChart:
-        def __init__(self, title, width=800, height=400):
-            self.title = title
-            self.width = width
-            self.height = height
-            self.padding = 80
-            self.lines = []
-            self.x_labels = []
-
-        def add_line(self, data, label, color):
-            self.lines.append({"data": data, "label": label, "color": color})
-
-        def set_x_labels(self, labels):
-            self.x_labels = labels
-
-        def generate(self):
-            # Calculate ranges
-            all_values = [v for line in self.lines for v in line["data"]]
-            if not all_values:
-                return ""
-            max_val = max(all_values)
-            min_val = 0  # Always start at 0 for context
-
-            # Helper for scaling
-            def get_y(val):
-                if max_val == min_val:
-                    return self.height - self.padding
-                ratio = (val - min_val) / (max_val - min_val)
-                plot_height = self.height - (2 * self.padding)
-                return self.height - self.padding - (ratio * plot_height)
-
-            def get_x(idx, count):
-                plot_width = self.width - (2 * self.padding)
-                if count <= 1:
-                    return self.padding + (plot_width / 2)
-                step = plot_width / (count - 1)
-                return self.padding + (idx * step)
-
-            svg = [
-                f'<svg width="{self.width}" height="{self.height}" xmlns="http://www.w3.org/2000/svg">'
-            ]
-
-            # Background
-            svg.append('<rect width="100%" height="100%" fill="white" />')
-
-            def escape_xml(s):
-                """Basic XML escaping for special characters."""
-                return (
-                    str(s)
-                    .replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-                    .replace('"', "&quot;")
-                    .replace("'", "&apos;")
-                )
-
-            # Title
-            svg.append(
-                f'<text x="{self.width / 2}" y="30" text-anchor="middle" '
-                f'font-family="sans-serif" font-size="20" font-weight="bold">'
-                f"{escape_xml(self.title)}</text>"
-            )
-
-            # Axes
-            plot_bottom = self.height - self.padding
-            plot_top = self.padding
-            plot_left = self.padding
-            plot_right = self.width - self.padding
-
-            svg.append(
-                f'<line x1="{plot_left}" y1="{plot_bottom}" x2="{plot_right}" '
-                f'y2="{plot_bottom}" stroke="black" stroke-width="2"/>'
-            )  # X Axis
-            svg.append(
-                f'<line x1="{plot_left}" y1="{plot_bottom}" x2="{plot_left}" '
-                f'y2="{plot_top}" stroke="black" stroke-width="2"/>'
-            )  # Y Axis
-
-            # Y Labels (5 steps)
-            for i in range(6):
-                val = min_val + (max_val - min_val) * (i / 5)
-                y = get_y(val)
-                svg.append(
-                    f'<line x1="{plot_left - 5}" y1="{y}" x2="{plot_left}" '
-                    f'y2="{y}" stroke="black"/>'
-                )
-                svg.append(
-                    f'<text x="{plot_left - 10}" y="{y + 5}" text-anchor="end" '
-                    f'font-family="sans-serif" font-size="12">{escape_xml(int(val))}</text>'
-                )
-                svg.append(
-                    f'<line x1="{plot_left}" y1="{y}" x2="{plot_right}" y2="{y}" '
-                    f'stroke="#ddd" stroke-dasharray="4"/>'
-                )  # Grid
-
-            # X Labels (Sampled if too many) - Simplified logic
-            count = len(self.x_labels)
-            step = max(1, count // 10)
-            for i in range(0, count, step):
-                x = get_x(i, count)
-                svg.append(
-                    f'<line x1="{x}" y1="{plot_bottom}" x2="{x}" '
-                    f'y2="{plot_bottom + 5}" stroke="black"/>'
-                )
-                svg.append(
-                    f'<text x="{x}" y="{plot_bottom + 10}" text-anchor="start" '
-                    f'font-family="sans-serif" font-size="10" '
-                    f'transform="rotate(45, {x}, {plot_bottom + 10})">'
-                    f"{escape_xml(self.x_labels[i])}</text>"
-                )
-
-            # Legend
-            legend_x = plot_right - 150
-            legend_y = plot_top
-            for i, line in enumerate(self.lines):
-                ly = legend_y + (i * 20)
-                svg.append(
-                    f'<rect x="{legend_x}" y="{ly}" width="10" height="10" fill="{line["color"]}"/>'
-                )
-                svg.append(
-                    f'<text x="{legend_x + 15}" y="{ly + 10}" '
-                    f'font-family="sans-serif" font-size="12">{escape_xml(line["label"])}</text>'
-                )
-
-            # Lines
-            for line in self.lines:
-                points = []
-                data = line["data"]
-                for i, val in enumerate(data):
-                    x = get_x(i, len(data))
-                    y = get_y(val)
-                    points.append(f"{x},{y}")
-
-                polyline = (
-                    f'<polyline points="{" ".join(points)}" fill="none" '
-                    f'stroke="{line["color"]}" stroke-width="2"/>'
-                )
-                svg.append(polyline)
-
-            svg.append("</svg>")
-            return "\n".join(svg)
-
     # Assets Setup
     assets_dir = output_path.parent / "history_assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
 
     def generate_chart(title, generator_func, filename_base, mermaid_def):
-        """Generates a chart using SVG generator, falling back to mermaid block if needed."""
-        if assets_dir:
-            output_svg = assets_dir / f"{filename_base}.svg"
-
-            try:
-                svg_content = generator_func()
-                with open(output_svg, "w") as f:
-                    f.write(svg_content)
-
-                # Relativize path for the link
-                rel_path = os.path.relpath(output_svg, output_path.parent)
-                return f"![{title}]({rel_path})"
-            except Exception as e:
-                print(
-                    f"Failed to generate SVG for {filename_base}: {e}", file=sys.stderr
-                )
-                return f"```mermaid\n{mermaid_def}\n```"
-        else:
-            return f"```mermaid\n{mermaid_def}\n```"
+        """Generates a chart using mermaid block directly."""
+        return f"```mermaid\n{mermaid_def}\n```"
 
     if graph_data:
         # --- SUMMARY METRICS ---
@@ -1050,19 +981,9 @@ def run_history_analysis(target_repo_root, ade_root, args):
         loc_def += f'    line {json.dumps(css_data)} "CSS"\n'
         loc_def += f'    line {json.dumps(sh_data)} "Shell"'
 
-        def make_loc_svg():
-            chart = SimpleSVGChart("Core Source Lines of Code over Time")
-            chart.set_x_labels(dates)
-            chart.add_line(core_total_data, "Total (Core)", "#2196F3")  # Blue
-            chart.add_line(py_data, "Python", "#4CAF50")  # Green
-            chart.add_line(ts_data, "TS/JS", "#ff9800")  # Orange
-            chart.add_line(css_data, "CSS", "#9c27b0")  # Purple
-            chart.add_line(sh_data, "Shell", "#795548")  # Brown
-            return chart.generate()
-
         charts.append(
             generate_chart(
-                "Core Source Lines of Code over Time", make_loc_svg, "loc_history", loc_def
+                "Core Source Lines of Code over Time", None, "loc_history", loc_def
             )
         )
 
@@ -1081,18 +1002,10 @@ def run_history_analysis(target_repo_root, ade_root, args):
         non_source_def += f'    line {json.dumps(json_data)} "JSON"\n'
         non_source_def += f'    line {json.dumps(test_total_data)} "Test Total"'
 
-        def make_non_source_svg():
-            chart = SimpleSVGChart("Non-Source & Test Growth (not included in core source lines)")
-            chart.set_x_labels(dates)
-            chart.add_line(md_data, "Markdown", "#607d8b")  # Blue Grey
-            chart.add_line(json_data, "JSON", "#9e9e9e")  # Grey
-            chart.add_line(test_total_data, "Test Total", "#f44336")  # Red
-            return chart.generate()
-
         charts.append(
             generate_chart(
                 "Non-Source & Test Growth",
-                make_non_source_svg,
+                None,
                 "non_source_history",
                 non_source_def,
             )
@@ -1113,16 +1026,9 @@ def run_history_analysis(target_repo_root, ade_root, args):
         debt_def += f'    line {json.dumps(todo_data)} "TODOs"\n'
         debt_def += f'    line {json.dumps(fixme_data)} "FIXMEs"'
 
-        def make_debt_svg():
-            chart = SimpleSVGChart("Technical Debt Markers")
-            chart.set_x_labels(dates)
-            chart.add_line(todo_data, "TODOs", "#2196F3")  # Blue
-            chart.add_line(fixme_data, "FIXMEs", "#f44336")  # Red
-            return chart.generate()
-
         charts.append(
             generate_chart(
-                "Technical Debt Markers", make_debt_svg, "debt_history", debt_def
+                "Technical Debt Markers", None, "debt_history", debt_def
             )
         )
 
