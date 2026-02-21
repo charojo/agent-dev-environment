@@ -9,16 +9,15 @@ import fnmatch
 import re
 import subprocess
 import sys
+import os
 from pathlib import Path
+from ADE_ownership import is_repo_owned_by_current_user
 
 # Patterns indicating absolute project paths that should be relative.
 # We catch the file:/// scheme followed by an absolute linux path or the project root.
 PATTERNS = [
     re.compile(r"file:///home/[\w.-]+/"),
     # Common user home pattern in case project root detection is slightly off in some envs
-    re.compile(r"/home/[\w.-]+/projects/[\w.-]+"),
-]
-
 # Binary extensions to skip
 BINARY_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", 
@@ -30,6 +29,7 @@ DEFAULT_EXCLUDES = [
     ".gitmodules",
     "ADE_enforce_relative_paths.py",
     "enforce_relative_paths.py",
+    "full_config.yaml",
 ]
 
 
@@ -116,6 +116,10 @@ def main():
 
     for rel_path_str in files_to_check:
         file_path = root_dir / rel_path_str
+
+        # Skip repositories not owned by the current user
+        if not is_repo_owned_by_current_user(file_path):
+            continue
 
         if file_path.is_dir():
             continue

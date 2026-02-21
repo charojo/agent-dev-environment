@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 from ADE_config_utils import get_value, load_config
+from ADE_ownership import is_repo_owned_by_current_user
 
 # Configuration
 # Default to current directory script is in -> parent -> parent (assuming bin/ADE_document.py)
@@ -37,7 +38,6 @@ DOC_BLOCK_START = re.compile(r"^\s*(?://\s*)?## @DOC\s*(.*)$")
 DIAGRAM_LINK = re.compile(
     r"(\s*(?:#|//)\s*See architecture:\s*)(\[.*?\]\(.*?\))(\s*<!--\s*@diagram:\s*(.*?)\s*-->)"
 )
-
 
 def clean_gen_dir():
     """
@@ -100,6 +100,9 @@ def extract_documentation(root_dir):
     extracted_docs = {}
 
     for root, _, files in os.walk(root_dir):
+        if not is_repo_owned_by_current_user(Path(root)):
+            continue
+
         if (
             ".git" in root
             or "__pycache__" in root
@@ -476,6 +479,9 @@ def update_diagram_links(root_dir):
     updates_made = 0
 
     for root, _, files in os.walk(root_dir):
+        if not is_repo_owned_by_current_user(Path(root)):
+            continue
+
         if ".git" in root or "node_modules" in root or "docs/gen" in root:
             continue
 
@@ -488,7 +494,7 @@ def update_diagram_links(root_dir):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, FileNotFoundError, PermissionError):
                 continue
 
             def replace_link(match):

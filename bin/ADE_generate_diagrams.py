@@ -5,7 +5,8 @@ from pathlib import Path
 import re
 import hashlib
 import shutil
-
+import os
+from ADE_ownership import is_repo_owned_by_current_user
 
 # Global set to track valid files
 VALID_FILES = set()
@@ -162,9 +163,6 @@ def process_markdown_diagrams(project_root, check_only=False):
     print("\nProcessing Markdown diagrams...")
     md_files = find_md_files(project_root)
     
-    diagrams_dir = project_root / "docs" / "assets" / "diagrams"
-    diagrams_dir.mkdir(parents=True, exist_ok=True)
-    
     files_to_update = []
 
     for md_file in md_files:
@@ -172,6 +170,16 @@ def process_markdown_diagrams(project_root, check_only=False):
         if "node_modules" in str(md_file) or "/." in str(md_file):
             continue
             
+        # Skip repositories not owned by the current user
+        if not is_repo_owned_by_current_user(md_file):
+            print(f"  Skipping {md_file} (not owned by user)")
+            continue
+            
+        print(f"  Processing {md_file}...")
+        
+        # Determine local diagrams directory relative to the MD file
+        diagrams_dir = md_file.parent / "assets" / "diagrams"
+        diagrams_dir.mkdir(parents=True, exist_ok=True)
         try:
             with open(md_file, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -197,6 +205,9 @@ def process_markdown_diagrams(project_root, check_only=False):
         # Sort by start index
         matches.sort(key=lambda x: x[1].start())
         
+        if matches:
+            print(f"    Found {len(matches)} potential diagrams in {md_file.name}")
+
         for mtype, match in matches:
             # Avoid overlapping matches (if any)
             if match.start() < last_idx:
@@ -266,8 +277,8 @@ def process_markdown_diagrams(project_root, check_only=False):
                     compile_dot_to_svg(block_content, output_path, caption)
             
             try:
-                rel_svg_path = output_path.relative_to(md_file.parent)
-                rel_src_path = src_path.relative_to(md_file.parent)
+                rel_svg_path = os.path.relpath(output_path, md_file.parent)
+                rel_src_path = os.path.relpath(src_path, md_file.parent)
             except ValueError:
                 rel_svg_path = output_path
                 rel_src_path = src_path

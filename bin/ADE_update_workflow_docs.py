@@ -8,7 +8,9 @@ import argparse
 import re
 import subprocess
 import sys
+import os
 from pathlib import Path
+from ADE_ownership import is_repo_owned_by_current_user
 
 def get_project_root():
     """Returns the project root directory."""
@@ -54,6 +56,10 @@ def update_docs(target_file, workflows):
     """Updates the workflows section in the target file."""
     if not target_file.exists():
         print(f"Error: {target_file} does not exist. Skipping.")
+        return False
+        
+    if not is_repo_owned_by_current_user(target_file):
+        print(f"Skipping {target_file} (repository not owned by current user).")
         return False
 
     content = target_file.read_text()
