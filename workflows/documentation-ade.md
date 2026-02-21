@@ -25,7 +25,7 @@ This workflow is the single point of entry for maintaining project documentation
 
 3.  **Enforce Path Portability**:
     ```bash
-    uv run python agent_env/bin/ADE_enforce_relative_paths.py
+    uv run python upstream/agent_env/bin/ADE_enforce_relative_paths.py
     ```
 
 4.  **Generate Diagrams and Fix Assets**:
@@ -33,24 +33,24 @@ This workflow is the single point of entry for maintaining project documentation
     - Ensure all Mermaid source code is moved to `docs/assets/diagrams/` as `.mmd` files.
     - Update Markdown files to use `figure <num>: <caption text>` format with links to SVG and source.
     ```bash
-    uv run python agent_env/bin/ADE_generate_diagrams.py
+    uv run python upstream/agent_env/bin/ADE_generate_diagrams.py
     ```
 
 5.  **Validate Diagram Convention**:
     ```bash
-    uv run pytest agent_env/tests/test_diagram_convention.py
+    uv run pytest upstream/agent_env/tests/test_diagram_convention.py
     ```
 
 6.  **Execute Document Extraction & API Docs**:
     This generates the design spec and updates Doxygen/TypeDoc.
     ```bash
-    uv run python agent_env/bin/ADE_document.py
+    uv run python upstream/agent_env/bin/ADE_document.py
     ```
 
 6.  **Update Workflow Registry**:
     This updates cross-references in manual documents.
     ```bash
-    uv run python agent_env/bin/ADE_update_workflow_docs.py
+    uv run python upstream/agent_env/bin/ADE_update_workflow_docs.py
     ```
 
 ## Verification

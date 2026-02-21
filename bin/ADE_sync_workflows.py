@@ -70,11 +70,19 @@ def sync_workflows():
         upstream_name = upstream_dir.name
         suffix = get_suffix(upstream_name)
         
-        # Potential source directories in the upstream folder
-        possible_sources = [
-            upstream_dir / "workflows",
-            upstream_dir / ".agent" / "workflows"
-        ]
+        # Potential source directories in the upstream folder - now searching recursively
+        possible_sources = []
+        for p in upstream_dir.rglob("workflows"):
+            if p.is_dir():
+                # Skip node_modules and hidden directories (except .agent)
+                if "node_modules" in p.parts or any(part.startswith(".") and part != ".agent" for part in p.parts):
+                    continue
+                possible_sources.append(p)
+        for p in upstream_dir.rglob(".agent/workflows"):
+            if p.is_dir():
+                if "node_modules" in p.parts:
+                    continue
+                possible_sources.append(p)
         
         for source_dir in possible_sources:
             if not source_dir.exists():
