@@ -177,8 +177,8 @@ def process_markdown_diagrams(project_root, check_only=False):
             
         print(f"  Processing {md_file}...")
         
-        # Determine local diagrams directory relative to the MD file
-        diagrams_dir = md_file.parent / "assets" / "diagrams"
+        # Determine global diagrams directory
+        diagrams_dir = project_root / "docs" / "assets" / "diagrams"
         diagrams_dir.mkdir(parents=True, exist_ok=True)
         try:
             with open(md_file, "r", encoding="utf-8") as f:

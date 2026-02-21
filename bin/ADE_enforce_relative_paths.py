@@ -18,6 +18,7 @@ from ADE_ownership import is_repo_owned_by_current_user
 PATTERNS = [
     re.compile(r"file:///home/[\w.-]+/"),
     # Common user home pattern in case project root detection is slightly off in some envs
+]
 # Binary extensions to skip
 BINARY_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", 
