@@ -28,64 +28,40 @@ try:
 except ImportError:
     pass
 
-try:
-    from ADE_ownership import is_repo_owned_by_current_user
-except ImportError:
-    def is_repo_owned_by_current_user(path): return True
-
 
 def run_git_command(args, cwd):
     """Run a git command and return the output."""
     try:
-        result = subprocess.run(
-            ["git"] + args, cwd=cwd, capture_output=True, text=True, check=True
-        )
+        result = subprocess.run(["git"] + args, cwd=cwd, capture_output=True, text=True, check=True)
         return result.stdout.strip()
     except subprocess.CalledProcessError:
         # print(f"Error running git command: {e}", file=sys.stderr)
         return None
 
 
-def get_commits(cwd, limit=None, since_commit=None, date_start=None):
+def get_commits(cwd, limit=None, since_commit=None):
     """Get a list of commits (hash, date, author, subject)."""
     args = ["log", "--pretty=format:%H|%ad|%an|%s", "--date=short"]
 
-    if date_start:
-        # Convert YYYYMMDD to YYYY-MM-DD if needed
-        if len(date_start) == 8 and date_start.isdigit():
-            date_start = f"{date_start[:4]}-{date_start[4:6]}-{date_start[6:]}"
-        args.append(f"--since={date_start}")
-
     if since_commit:
-        # Get commits from since_commit..HEAD
+        # Get commits from since_commit..HEAD using proper git syntax
+        # We want to include everything AFTER since_commit
         args.append(f"{since_commit}..HEAD")
+
+    if limit:
+        args.extend(["-n", str(limit)])
 
     output = run_git_command(args, cwd)
     if not output:
         return []
 
     commits = []
-    seen_dates = set()
     for line in output.split("\n"):
         parts = line.split("|", 3)
         if len(parts) == 4:
-            commit_date = parts[1]
-            # ONLY TAKE THE LATEST COMMIT PER DAY
-            # Since git log is newest first, the first time we see a date, it's the latest for that day.
-            if commit_date not in seen_dates:
-                commits.append(
-                    {
-                        "hash": parts[0],
-                        "date": commit_date,
-                        "author": parts[2],
-                        "subject": parts[3],
-                    }
-                )
-                seen_dates.add(commit_date)
-
-    if limit:
-        commits = commits[:limit]
-
+            commits.append(
+                {"hash": parts[0], "date": parts[1], "author": parts[2], "subject": parts[3]}
+            )
     return commits
 
 
@@ -173,7 +149,7 @@ def count_lines_file(file_path):
 # --- Local Analysis Logic (Migration from ADE_analyze_project.py) ---
 
 
-def run_local_analysis(target_repo_root, ade_root, args):
+def run_local_analysis(root_dir, args):
     """Analyzes the current filesystem (Local Mode)."""
 
     # Run validation if requested
@@ -182,13 +158,13 @@ def run_local_analysis(target_repo_root, ade_root, args):
         print("Running full validation suite (validate.sh --full)...", file=sys.stderr)
         try:
             # We run validate.sh --full and capture its output
-            validate_bin = ade_root / "agent_env" / "bin" / "validate.sh"
+            validate_bin = root_dir / "agent_env" / "bin" / "validate.sh"
             if not validate_bin.exists():
-                validate_bin = ade_root / "bin" / "validate.sh"
+                validate_bin = root_dir / "bin" / "validate.sh"
 
             result = subprocess.run(
                 [str(validate_bin), "--full"],
-                cwd=target_repo_root,
+                cwd=root_dir,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -216,7 +192,7 @@ def run_local_analysis(target_repo_root, ade_root, args):
 
     # Check config
     try:
-        config = config_utils.load_config(target_repo_root)
+        config = config_utils.load_config(root_dir)
     except NameError:
         config = {}
 
@@ -243,25 +219,20 @@ def run_local_analysis(target_repo_root, ade_root, args):
     # Use git ls-files to respect .gitignore
     try:
         cmd = ["git", "ls-files", "--cached", "--others", "--exclude-standard"]
-        git_files = subprocess.check_output(cmd, cwd=target_repo_root, text=True).splitlines()
+        git_files = subprocess.check_output(cmd, cwd=root_dir, text=True).splitlines()
     except subprocess.CalledProcessError:
         # Fallback to os.walk if not a git repo (unlikely here but safe)
         git_files = []
-        for root, _, files in os.walk(target_repo_root):
+        for root, _, files in os.walk(root_dir):
             for file in files:
-                git_files.append(os.path.relpath(os.path.join(root, file), target_repo_root))
+                git_files.append(os.path.relpath(os.path.join(root, file), root_dir))
 
     for file_rel_path in git_files:
-        file_path = target_repo_root / file_rel_path
+        file_path = root_dir / file_rel_path
         filename = os.path.basename(file_rel_path)
 
         # Skip common lock files
-        if filename in [
-            "package-lock.json",
-            "pnpm-lock.yaml",
-            "yarn.lock",
-            "poetry.lock",
-        ]:
+        if filename in ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "poetry.lock"]:
             continue
 
         _, ext = os.path.splitext(file_rel_path)
@@ -274,39 +245,6 @@ def run_local_analysis(target_repo_root, ade_root, args):
             results[lang]["loc"] += loc
             results[lang]["todos"] += todos
             results[lang]["fixmes"] += fixmes
-
-    # --- Submodule Inclusion ---
-    try:
-        submodule_output = subprocess.check_output(
-            ["git", "submodule", "status"], cwd=target_repo_root, text=True
-        ).splitlines()
-        for line in submodule_output:
-            # -hash path (branch)
-            #  hash path (branch)
-            parts = line.strip().split()
-            if len(parts) >= 2:
-                sub_path_rel = parts[1]
-                sub_path_abs = target_repo_root / sub_path_rel
-                if sub_path_abs.exists() and is_repo_owned_by_current_user(str(sub_path_abs)):
-                    # Analyze files in submodule
-                    sub_files = subprocess.check_output(
-                        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-                        cwd=sub_path_abs, text=True
-                    ).splitlines()
-                    for f_rel in sub_files:
-                        _, f_ext = os.path.splitext(f_rel)
-                        if f_ext in enabled_extensions:
-                            lang = enabled_extensions[f_ext]
-                            f_path = sub_path_abs / f_rel
-                            if os.path.basename(f_rel) in ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "poetry.lock"]:
-                                continue
-                            loc, todos, fixmes = count_lines_file(f_path)
-                            results[lang]["files"] += 1
-                            results[lang]["loc"] += loc
-                            results[lang]["todos"] += todos
-                            results[lang]["fixmes"] += fixmes
-    except Exception as e:
-        print(f"Warning: Failed to process submodules in local analysis: {e}", file=sys.stderr)
 
     # Output
     sorted_langs = sorted(results.keys())
@@ -324,7 +262,7 @@ def run_local_analysis(target_repo_root, ade_root, args):
         print_text_table_to_stream(sys.stdout, results, sorted_langs, metrics, keys)
 
     # Config Results
-    results_file = ade_root / "logs" / "config_test_results.json"
+    results_file = root_dir / "logs" / "config_test_results.json"
     print_config_results(results_file, markdown=args.markdown or args.dual)
 
     # If we have validation metrics, print them
@@ -344,11 +282,7 @@ def print_markdown_table_local(results, sorted_langs, metrics, keys):
             return "JSON"
         return lang.title()
 
-    header = (
-        "| Metric | "
-        + " | ".join([format_lang(lang) for lang in sorted_langs])
-        + " | Total |"
-    )
+    header = "| Metric | " + " | ".join([format_lang(lang) for lang in sorted_langs]) + " | Total |"
     divider = "| :--- | " + " | ".join([":---" for _ in sorted_langs]) + " | :--- |"
     print(header)
     print(divider)
@@ -457,10 +391,7 @@ def parse_requirements_content(content):
             if len(parts) > 3:
                 status = parts[3].lower()
                 # Open if Planned, Partial, Designed, or In Progress
-                if any(
-                    s in status
-                    for s in ["planned", "partial", "designed", "in progress"]
-                ):
+                if any(s in status for s in ["planned", "partial", "designed", "in progress"]):
                     open_reqs += 1
     return open_reqs, total
 
@@ -496,24 +427,13 @@ def parse_data_row(line):
         return None
 
     try:
-        # Extract date and commit
+        # Extract date from | YYYY-MM-DD |
         date = parts[1]
-        commit = parts[2].replace("`", "")
-        author = parts[3]
         if not re.match(r"\d{4}-\d{2}-\d{2}", date):
             return None
 
-        # Helper to split "Open / Total"
-        def split_stat(s):
-            vals = s.split("/")
-            if len(vals) == 2:
-                return int(vals[0].strip()), int(vals[1].strip())
-            return int(vals[0].strip()), 0
-
         return {
             "date": date,
-            "commit": commit,
-            "author": author,
             "loc_total": int(parts[4]),
             "loc_py": int(parts[5]),
             "loc_ts": int(parts[6]),
@@ -526,82 +446,62 @@ def parse_data_row(line):
             "test_loc_py": int(parts[13]),
             "test_loc_ts": int(parts[14]),
             "test_loc_sh": int(parts[15]),
-            "todos": split_stat(parts[16])[0],
-            "md_todos": split_stat(parts[16])[1],
-            "fixmes": split_stat(parts[17])[0],
-            "md_fixmes": split_stat(parts[17])[1],
-            "open_reqs": split_stat(parts[18])[0],
-            "total_reqs": split_stat(parts[18])[1],
-            "open_issues": split_stat(parts[19])[0],
-            "total_issues": split_stat(parts[19])[1],
+            # Markers in the new table are split Format: "Code / MD"
+            "todos": int(parts[16].split("/")[0]),
+            "md_todos": int(parts[16].split("/")[1]),
+            "fixmes": int(parts[17].split("/")[0]),
+            "md_fixmes": int(parts[17].split("/")[1]),
+            "open_reqs": int(parts[18].split("/")[0]),
+            "total_reqs": int(parts[18].split("/")[1]),
+            "open_issues": int(parts[19].split("/")[0]),
+            "total_issues": int(parts[19].split("/")[1]),
         }
     except (ValueError, IndexError):
         return None
 
 
-def run_history_analysis(target_repo_root, ade_root, args):
-    cwd = target_repo_root
+def run_history_analysis(root_dir, args):
+    cwd = root_dir
     since_commit = args.since
 
     existing_content = []
 
-    # Use specified output path or default to docs/HISTORY.md in target repo
-    if args.output:
-        output_path = Path(args.output).resolve()
-    else:
-        output_path = target_repo_root / "docs" / "HISTORY.md"
+    # Hardcoded output path in docs/
+    output_path = root_dir / "docs" / "HISTORY.md"
+    # Ensure docs directory exists
+    output_path.parent.mkdir(exist_ok=True)
 
-    # Ensure output directory exists
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Incremental Logic
+    if args.incremental and os.path.exists(output_path):
+        print(f"Incremental mode: Checking {output_path} for last commit...", file=sys.stderr)
+        last_tracked = parse_existing_history(output_path)
+        if last_tracked:
+            print(f"Found last tracked commit: {last_tracked}", file=sys.stderr)
+            # If we tried to assume that last_commit is part of history, we use it as 'since'
+            # Note: git log range is exclusive of the 'since' commit usually (since..HEAD)
+            since_commit = last_tracked
 
-    # Intelligent Merging Logic
-    daily_data = {}
-    if os.path.exists(output_path) and not args.refresh:
-        print(f"Loading existing data from {output_path}...", file=sys.stderr)
-        with open(output_path, "r") as f:
-            for line in f:
-                row_data = parse_data_row(line)
-                if row_data:
-                    # We store the latest record per day found in the file
-                    if row_data["date"] not in daily_data:
-                        daily_data[row_data["date"]] = row_data
+            # Read existing content to preserve it (excluding header if we rewrite)
+            # Actually, simpler to just read the whole file, strip header, and append to new rows
+            with open(output_path, "r") as f:
+                existing_content = f.readlines()
+        else:
+            print(
+                "No existing history found in output file. Running full analysis.", file=sys.stderr
+            )
 
-        if daily_data:
-            earliest = min(daily_data.keys())
-            latest = max(daily_data.keys())
-            print(f"Found {len(daily_data)} days already tracked ({earliest} to {latest}).", file=sys.stderr)
+    commits = get_commits(cwd, args.limit, since_commit)
 
-    # Determine what to fetch
-    fetch_since = args.date_start
-    if not fetch_since and daily_data:
-        # Default to the latest tracked date if no specific start given
-        fetch_since = max(daily_data.keys())
+    # If using 'since', the commits returned are new ones.
+    # If we are strictly prepending new data to old data,
+    # we need to sort commits Newest -> Oldest (default log).
 
-    commits = get_commits(cwd, args.limit, since_commit=None, date_start=fetch_since)
+    if not commits:
+        print("No new commits to analyze.", file=sys.stderr)
+        # If output exists, just exit? Or should we touch it?
+        return
 
-    # Filter out redundant commits (Don't repull)
-    # Exception: Allow updating today's entry
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    final_commits_to_process = []
-    for c in commits:
-        if c["date"] not in daily_data:
-            final_commits_to_process.append(c)
-        elif c["date"] == today_str:
-            # Check if hash is different (latest commit of the day might have changed)
-            if c["hash"][:7] != daily_data[today_str]["commit"]:
-                final_commits_to_process.append(c)
-
-    if not final_commits_to_process:
-        print("Everything up to date. Refreshing report and charts...", file=sys.stderr)
-        if not daily_data:
-            return
-    else:
-        print(f"Found {len(final_commits_to_process)} commits missing from history. Processing...", file=sys.stderr)
-
-    commits = final_commits_to_process
-
-    # If no new commits, we skip the analysis loop but still regenerate plots/report
-    # from the daily_data we loaded or collected.
+    print(f"Found {len(commits)} commits to process...", file=sys.stderr)
 
     if args.reverse:
         commits.reverse()
@@ -638,17 +538,17 @@ def run_history_analysis(target_repo_root, ade_root, args):
             "md_todos": 0,
             "md_fixmes": 0,
             # Source code LOC (non-test)
-            "loc_py": 0,
-            "loc_ts": 0,
-            "loc_md": 0,
+            "loc_python": 0,
+            "loc_typescript": 0,
+            "loc_markdown": 0,
             "loc_css": 0,
-            "loc_sh": 0,
+            "loc_shell": 0,
             "loc_json": 0,
             "loc_total": 0,
             # Test code LOC
-            "test_loc_py": 0,
-            "test_loc_ts": 0,
-            "test_loc_sh": 0,
+            "test_loc_python": 0,
+            "test_loc_typescript": 0,
+            "test_loc_shell": 0,
             "test_loc_total": 0,
             "test_files": 0,
             "open_reqs": 0,
@@ -661,14 +561,10 @@ def run_history_analysis(target_repo_root, ade_root, args):
             # Special Handling for Requirements and Issues
             if file_path == "docs/REQUIREMENTS.md":
                 content = get_file_content_git(cwd, commit["hash"], file_path)
-                stats["open_reqs"], stats["total_reqs"] = parse_requirements_content(
-                    content
-                )
+                stats["open_reqs"], stats["total_reqs"] = parse_requirements_content(content)
             elif file_path == "docs/ISSUES.md":
                 content = get_file_content_git(cwd, commit["hash"], file_path)
-                stats["open_issues"], stats["total_issues"] = parse_issues_content(
-                    content
-                )
+                stats["open_issues"], stats["total_issues"] = parse_issues_content(content)
 
             ext = os.path.splitext(file_path)[1]
             if ext not in lang_map:
@@ -690,24 +586,24 @@ def run_history_analysis(target_repo_root, ade_root, args):
                 stats["test_files"] += 1
                 stats["test_loc_total"] += loc
                 if lang == "python":
-                    stats["test_loc_py"] += loc
+                    stats["test_loc_python"] += loc
                 elif lang in ["typescript", "javascript"]:
-                    stats["test_loc_ts"] += loc
+                    stats["test_loc_typescript"] += loc
                 elif lang == "shell":
-                    stats["test_loc_sh"] += loc
+                    stats["test_loc_shell"] += loc
             else:
                 # Non-test source code
                 stats["loc_total"] += loc
                 if lang == "python":
-                    stats["loc_py"] += loc
+                    stats["loc_python"] += loc
                 elif lang in ["typescript", "javascript"]:
-                    stats["loc_ts"] += loc
+                    stats["loc_typescript"] += loc
                 elif lang == "markdown":
-                    stats["loc_md"] += loc
+                    stats["loc_markdown"] += loc
                 elif lang == "css":
                     stats["loc_css"] += loc
                 elif lang == "shell":
-                    stats["loc_sh"] += loc
+                    stats["loc_shell"] += loc
                 elif lang == "json":
                     filename = os.path.basename(file_path)
                     if filename not in [
@@ -718,77 +614,13 @@ def run_history_analysis(target_repo_root, ade_root, args):
                     ]:
                         stats["loc_json"] += loc
 
-        # --- Submodule Inclusion (History) ---
-        try:
-            # 160000 commit <hash>\t<path>
-            tree_output = run_git_command(["ls-tree", "-r", commit["hash"]], cwd)
-            if tree_output:
-                for line in tree_output.splitlines():
-                    if " commit " in line:
-                        parts = line.strip().split()
-                        if len(parts) >= 4:
-                            # 160000 commit hash path
-                            sub_hash = parts[2]
-                            sub_path_rel = parts[3]
-                            sub_path_abs = cwd / sub_path_rel
-                            
-                            # Only parse if owned and checked out
-                            if sub_path_abs.exists() and is_repo_owned_by_current_user(str(sub_path_abs)):
-                                # Get files in submodule at THAT sub_hash
-                                sub_files_output = run_git_command(["ls-tree", "-r", "--name-only", sub_hash], sub_path_abs)
-                                if sub_files_output:
-                                    for f_sub in sub_files_output.splitlines():
-                                        f_ext = os.path.splitext(f_sub)[1]
-                                        if f_ext in lang_map:
-                                            f_content = get_file_content_git(sub_path_abs, sub_hash, f_sub)
-                                            loc, todos, fixmes = analyze_content(f_content)
-                                            lang = lang_map[f_ext]
-                                            
-                                            if lang == "markdown":
-                                                stats["md_todos"] += todos
-                                                stats["md_fixmes"] += fixmes
-                                            else:
-                                                stats["todos"] += todos
-                                                stats["fixmes"] += fixmes
-                                                
-                                            is_f_test = is_test_file(f_sub)
-                                            if is_f_test:
-                                                stats["test_files"] += 1
-                                                stats["test_loc_total"] += loc
-                                                if lang == "python": stats["test_loc_py"] += loc
-                                                elif lang in ["typescript", "javascript"]: stats["test_loc_ts"] += loc
-                                                elif lang == "shell": stats["test_loc_sh"] += loc
-                                            else:
-                                                stats["loc_total"] += loc
-                                                if lang == "python": stats["loc_py"] += loc
-                                                elif lang in ["typescript", "javascript"]: stats["loc_ts"] += loc
-                                                elif lang == "markdown": stats["loc_md"] += loc
-                                                elif lang == "css": stats["loc_css"] += loc
-                                                elif lang == "shell": stats["loc_sh"] += loc
-                                                elif lang == "json":
-                                                    if os.path.basename(f_sub) not in ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "poetry.lock"]:
-                                                        stats["loc_json"] += loc
-        except Exception as e:
-            pass
-
-        daily_data[stats["date"]] = stats
+        history_data.append(stats)
 
     print("\nAnalysis complete.", file=sys.stderr)
 
-    # Generate Unified Graph Data and Report Rows
-    # Report rows should be ALL data, sorted Newest -> Oldest
-    report_rows = sorted(daily_data.values(), key=lambda x: x["date"], reverse=True)
-    
-    # Graph data can be filtered if a specific date-start was requested for this run
-    graph_data = sorted(daily_data.values(), key=lambda x: x["date"])
-    if args.date_start:
-        plot_start = args.date_start
-        if len(plot_start) == 8 and plot_start.isdigit():
-            plot_start = f"{plot_start[:4]}-{plot_start[4:6]}-{plot_start[6:]}"
-        graph_data = [d for d in graph_data if d["date"] >= plot_start]
-
+    # Generate Report Rows
     new_rows = []
-    for row in report_rows:
+    for row in history_data:
         # Table Includes BOTH (C / M)
         todo_str = f"{row['todos']} / {row['md_todos']}"
         fixme_str = f"{row['fixmes']} / {row['md_fixmes']}"
@@ -796,35 +628,278 @@ def run_history_analysis(target_repo_root, ade_root, args):
         iss_str = f"{row['open_issues']} / {row['total_issues']}"
         new_rows.append(
             f"| {row['date']} | `{row['commit']}` | {row['author']} | "
-            f"{row['loc_total']} | {row['loc_py']} | {row['loc_ts']} | "
-            f"{row['loc_md']} | {row['loc_css']} | {row['loc_sh']} | {row['loc_json']} | "
-            f"{row['test_files']} | {row['test_loc_total']} | {row['test_loc_py']} | "
-            f"{row['test_loc_ts']} | {row['test_loc_sh']} | {todo_str} | {fixme_str} | "
+            f"{row['loc_total']} | {row['loc_python']} | {row['loc_typescript']} | "
+            f"{row['loc_markdown']} | {row['loc_css']} | {row['loc_shell']} | {row['loc_json']} | "
+            f"{row['test_files']} | {row['test_loc_total']} | {row['test_loc_python']} | "
+            f"{row['test_loc_typescript']} | {row['test_loc_shell']} | {todo_str} | {fixme_str} | "
             f"{req_str} | {iss_str} |"
         )
 
     # COMBINING
-    final_output = [
-        "# Project History Analysis",
-        f"Generated on {datetime.now().isoformat()}",
-        "",
-        "| Date | Commit | Author | Total | Py | TS/JS | MD | CSS | SH | JSON | Tests | T-LOC | Py-T | TS-T | SH-T | TODO (C/M) | FIXME (C/M) | Req | Iss |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
-    ]
-    final_output.extend(new_rows)
+    final_output = []
+    if not existing_content:
+        final_output.append("# Project History Analysis")
+        final_output.append(f"Generated on {datetime.now().isoformat()}")
+        final_output.append("")
+        final_output.append(
+            "| Date | Commit | Author | Total | Py | TS/JS | MD | CSS | SH | JSON | Tests | "
+            "T-LOC | "
+            "Py-T | TS-T | SH-T | TODO (C/M) | FIXME (C/M) | Req | Iss |"
+        )
+        final_output.append(
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+        )
+        final_output.extend(new_rows)
+    else:
+        # We need to insert new rows after the header.
+        # Heuristic: Find the separator line for the main table
+        # We skip any charts/summaries that were already at the top
+        sep_index = -1
+        for i, line in enumerate(existing_content):
+            if line.strip().startswith("|---"):
+                sep_index = i
+                break
 
-    # graph_data is already built and sorted above
+        if sep_index != -1:
+            # We want to REBUILD the part BEFORE the table to have valid current summaries/charts
+            # but we keep the table rows.
+            final_output.append("# Project History Analysis")
+            final_output.append(f"Generated on {datetime.now().isoformat()}")
+            final_output.append("")
+            # Charts will be inserted at index 2 later
+
+            # The header is actually 1 line before sep_index
+            header_line = (
+                "| Date | Commit | Author | Total | Py | TS/JS | MD | CSS | SH | "
+                "JSON | Tests | T-LOC | Py-T | TS-T | SH-T | TODO (C/M) | "
+                "FIXME (C/M) | Req | Iss |"
+            )
+            sep_line = (
+                "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+            )
+
+            final_output.append(header_line)
+            final_output.append(sep_line)
+
+            # Insert NEW rows
+            final_output.extend(new_rows)
+            # Append old rows
+            final_output.extend(line.strip() for line in existing_content[sep_index + 1 :])
+        else:
+            # Could not find table structure, just append?
+            final_output.extend(line.strip() for line in existing_content)
+            final_output.extend(new_rows)
+
+    # Sort data for graphing (Oldest -> Newest)
+    # Build graph data by combining parsed existing data and newly processed data
+    daily_data = {}
+
+    # 1. Parse existing data from file if available
+    if existing_content:
+        for line in existing_content:
+            row_data = parse_data_row(line)
+            if row_data:
+                # Since we often have multiple commits per day, we store the LATEST state
+                # of that day
+                # Existing file is usually Newest -> Oldest,
+                # so first one we see is the latest for that date
+                date = row_data["date"]
+                if date not in daily_data:
+                    # In existing table, todos/fixmes already include MD markers
+                    # We can't easily separate them for old rows, so we'll just use them as is
+                    # Newer runs will have the separation in history_data
+                    daily_data[date] = row_data
+
+    # 2. Add newly processed data
+    for row in history_data:
+        date = row["date"]
+        # History data from log is also usually Newest -> Oldest
+        if date not in daily_data:
+            daily_data[date] = {
+                "date": date,
+                "loc_total": row["loc_total"],
+                "loc_py": row["loc_python"],
+                "loc_ts": row["loc_typescript"],
+                "loc_css": row["loc_css"],
+                "loc_sh": row["loc_shell"],
+                "loc_json": row["loc_json"],
+                "test_loc_total": row["test_loc_total"],
+                "test_loc_py": row["test_loc_python"],
+                "test_loc_ts": row["test_loc_typescript"],
+                "test_loc_sh": row["test_loc_shell"],
+                # FOR GRAPHS: We only include code markers (exclude MD)
+                # But for the table, we'll sum them below
+                "todos": row["todos"],
+                "fixmes": row["fixmes"],
+                "md_todos": row["md_todos"],
+                "md_fixmes": row["md_fixmes"],
+                "open_reqs": row["open_reqs"],
+                "total_reqs": row["total_reqs"],
+                "open_issues": row["open_issues"],
+                "total_issues": row["total_issues"],
+            }
+
+    graph_data = list(daily_data.values())
+    # Sort by date ascending for the chart
+    graph_data.sort(key=lambda x: x["date"])
 
     # Generate Charts
     charts = []
 
+    # SVG Generator Class (Embedded to avoid dependencies)
+    class SimpleSVGChart:
+        def __init__(self, title, width=800, height=400):
+            self.title = title
+            self.width = width
+            self.height = height
+            self.padding = 80
+            self.lines = []
+            self.x_labels = []
+
+        def add_line(self, data, label, color):
+            self.lines.append({"data": data, "label": label, "color": color})
+
+        def set_x_labels(self, labels):
+            self.x_labels = labels
+
+        def generate(self):
+            # Calculate ranges
+            all_values = [v for line in self.lines for v in line["data"]]
+            if not all_values:
+                return ""
+            max_val = max(all_values)
+            min_val = 0  # Always start at 0 for context
+
+            # Helper for scaling
+            def get_y(val):
+                if max_val == min_val:
+                    return self.height - self.padding
+                ratio = (val - min_val) / (max_val - min_val)
+                plot_height = self.height - (2 * self.padding)
+                return self.height - self.padding - (ratio * plot_height)
+
+            def get_x(idx, count):
+                plot_width = self.width - (2 * self.padding)
+                if count <= 1:
+                    return self.padding + (plot_width / 2)
+                step = plot_width / (count - 1)
+                return self.padding + (idx * step)
+
+            svg = [
+                f'<svg width="{self.width}" height="{self.height}" xmlns="http://www.w3.org/2000/svg">'
+            ]
+
+            # Background
+            svg.append('<rect width="100%" height="100%" fill="white" />')
+
+            # Title
+            svg.append(
+                f'<text x="{self.width / 2}" y="30" text-anchor="middle" '
+                f'font-family="sans-serif" font-size="20" font-weight="bold">'
+                f"{self.title}</text>"
+            )
+
+            # Axes
+            plot_bottom = self.height - self.padding
+            plot_top = self.padding
+            plot_left = self.padding
+            plot_right = self.width - self.padding
+
+            svg.append(
+                f'<line x1="{plot_left}" y1="{plot_bottom}" x2="{plot_right}" '
+                f'y2="{plot_bottom}" stroke="black" stroke-width="2"/>'
+            )  # X Axis
+            svg.append(
+                f'<line x1="{plot_left}" y1="{plot_bottom}" x2="{plot_left}" '
+                f'y2="{plot_top}" stroke="black" stroke-width="2"/>'
+            )  # Y Axis
+
+            # Y Labels (5 steps)
+            for i in range(6):
+                val = min_val + (max_val - min_val) * (i / 5)
+                y = get_y(val)
+                svg.append(
+                    f'<line x1="{plot_left - 5}" y1="{y}" x2="{plot_left}" '
+                    f'y2="{y}" stroke="black"/>'
+                )
+                svg.append(
+                    f'<text x="{plot_left - 10}" y="{y + 5}" text-anchor="end" '
+                    f'font-family="sans-serif" font-size="12">{int(val)}</text>'
+                )
+                svg.append(
+                    f'<line x1="{plot_left}" y1="{y}" x2="{plot_right}" y2="{y}" '
+                    f'stroke="#ddd" stroke-dasharray="4"/>'
+                )  # Grid
+
+            # X Labels (Sampled if too many) - Simplified logic
+            count = len(self.x_labels)
+            step = max(1, count // 10)
+            for i in range(0, count, step):
+                x = get_x(i, count)
+                svg.append(
+                    f'<line x1="{x}" y1="{plot_bottom}" x2="{x}" '
+                    f'y2="{plot_bottom + 5}" stroke="black"/>'
+                )
+                svg.append(
+                    f'<text x="{x}" y="{plot_bottom + 10}" text-anchor="start" '
+                    f'font-family="sans-serif" font-size="10" '
+                    f'transform="rotate(45, {x}, {plot_bottom + 10})">'
+                    f"{self.x_labels[i]}</text>"
+                )
+
+            # Legend
+            legend_x = plot_right - 150
+            legend_y = plot_top
+            for i, line in enumerate(self.lines):
+                ly = legend_y + (i * 20)
+                svg.append(
+                    f'<rect x="{legend_x}" y="{ly}" width="10" height="10" fill="{line["color"]}"/>'
+                )
+                svg.append(
+                    f'<text x="{legend_x + 15}" y="{ly + 10}" '
+                    f'font-family="sans-serif" font-size="12">{line["label"]}</text>'
+                )
+
+            # Lines
+            for line in self.lines:
+                points = []
+                data = line["data"]
+                for i, val in enumerate(data):
+                    x = get_x(i, len(data))
+                    y = get_y(val)
+                    points.append(f"{x},{y}")
+
+                polyline = (
+                    f'<polyline points="{" ".join(points)}" fill="none" '
+                    f'stroke="{line["color"]}" stroke-width="2"/>'
+                )
+                svg.append(polyline)
+
+            svg.append("</svg>")
+            return "\n".join(svg)
+
     # Assets Setup
-    assets_dir = output_path.parent / "history_assets"
-    assets_dir.mkdir(parents=True, exist_ok=True)
+    assets_dir = root_dir / "docs" / "history_assets"
+    assets_dir.mkdir(exist_ok=True)
 
     def generate_chart(title, generator_func, filename_base, mermaid_def):
-        """Generates a chart using mermaid block directly."""
-        return f"```mermaid\n{mermaid_def}\n```"
+        """Generates a chart using SVG generator, falling back to mermaid block if needed."""
+        if assets_dir:
+            output_svg = assets_dir / f"{filename_base}.svg"
+
+            try:
+                svg_content = generator_func()
+                with open(output_svg, "w") as f:
+                    f.write(svg_content)
+
+                # Relativize path for the link
+                rel_path = os.path.relpath(output_svg, output_path.parent)
+                return f"![{title}]({rel_path})"
+            except Exception as e:
+                print(f"Failed to generate SVG for {filename_base}: {e}", file=sys.stderr)
+                return f"```mermaid\n{mermaid_def}\n```"
+        else:
+            return f"```mermaid\n{mermaid_def}\n```"
 
     if graph_data:
         # --- SUMMARY METRICS ---
@@ -864,7 +939,7 @@ def run_history_analysis(target_repo_root, ade_root, args):
         ]
 
         # 1. Execution Coverage (MOVED TO TOP)
-        val_summary = ade_root / "logs" / "validation_summary_log.md"
+        val_summary = root_dir / "logs" / "validation_summary_log.md"
         if val_summary.exists():
             try:
                 with open(val_summary, "r") as f:
@@ -876,9 +951,7 @@ def run_history_analysis(target_repo_root, ade_root, args):
                     for line in content.splitlines():
                         if "TIMING_METRIC:" in line:
                             # TIMING_METRIC: Backend=18s
-                            m_time = re.search(
-                                r"TIMING_METRIC:\s*([^=]+)=([\d.]+)s", line
-                            )
+                            m_time = re.search(r"TIMING_METRIC:\s*([^=]+)=([\d.]+)s", line)
                             if m_time:
                                 timings.append((m_time.group(1), m_time.group(2)))
 
@@ -910,12 +983,8 @@ def run_history_analysis(target_repo_root, ade_root, args):
                                 summary_section.append(f"| {phase} | {duration}s |")
 
                         # Find Total
-                        total_time = next(
-                            (d for p, d in timings if p == "Total"), "N/A"
-                        )
-                        summary_section.extend(
-                            [f"| **Total** | **{total_time}s** |", ""]
-                        )
+                        total_time = next((d for p, d in timings if p == "Total"), "N/A")
+                        summary_section.extend([f"| **Total** | **{total_time}s** |", ""])
             except Exception:
                 pass
 
@@ -960,58 +1029,74 @@ def run_history_analysis(target_repo_root, ade_root, args):
 
         # LOC Chart
 
-        charts.append("## Core Source Growth")
+        charts.append("## Source Code Growth")
 
         dates = [d["date"] for d in graph_data]
         py_data = [d["loc_py"] for d in graph_data]
         ts_data = [d["loc_ts"] for d in graph_data]
         css_data = [d["loc_css"] for d in graph_data]
         sh_data = [d["loc_sh"] for d in graph_data]
-        # Core Total (Py + TS/JS + CSS + Shell)
-        core_total_data = [d["loc_py"] + d["loc_ts"] + d["loc_css"] + d["loc_sh"] for d in graph_data]
+        json_data = [d["loc_json"] for d in graph_data]
+        total_data = [d["loc_total"] for d in graph_data]
 
         # Mermaid Fallback Definition
         loc_def = "xychart-beta\n"
-        loc_def += '    title "Core Source Lines of Code over Time"\n'
+        loc_def += '    title "Source Lines of Code over Time"\n'
         loc_def += f"    x-axis {json.dumps(dates)}\n"
         loc_def += '    y-axis "LOC"\n'
-        loc_def += f'    line {json.dumps(core_total_data)} "Total (Core)"\n'
+        loc_def += f'    line {json.dumps(total_data)} "Total"\n'
         loc_def += f'    line {json.dumps(py_data)} "Python"\n'
         loc_def += f'    line {json.dumps(ts_data)} "TS/JS"\n'
         loc_def += f'    line {json.dumps(css_data)} "CSS"\n'
-        loc_def += f'    line {json.dumps(sh_data)} "Shell"'
+        loc_def += f'    line {json.dumps(sh_data)} "Shell"\n'
+        loc_def += f'    line {json.dumps(json_data)} "JSON"'
+
+        def make_loc_svg():
+            chart = SimpleSVGChart("Source Lines of Code over Time")
+            chart.set_x_labels(dates)
+            chart.add_line(total_data, "Total", "#2196F3")  # Blue
+            chart.add_line(py_data, "Python", "#4CAF50")  # Green
+            chart.add_line(ts_data, "TS/JS", "#ff9800")  # Orange
+            chart.add_line(css_data, "CSS", "#9c27b0")  # Purple
+            chart.add_line(sh_data, "Shell", "#795548")  # Brown
+            chart.add_line(json_data, "JSON", "#607d8b")  # Blue Grey
+            return chart.generate()
 
         charts.append(
-            generate_chart(
-                "Core Source Lines of Code over Time", None, "loc_history", loc_def
-            )
+            generate_chart("Source Lines of Code over Time", make_loc_svg, "loc_history", loc_def)
         )
 
-        # Non-Source Line Growth Chart
-        charts.append("\n## Non-Source Line Growth")
+        # Test Code Chart
+        charts.append("\n## Test Code Growth")
 
-        md_data = [d["loc_md"] for d in graph_data]
-        json_data = [d["loc_json"] for d in graph_data]
         test_total_data = [d["test_loc_total"] for d in graph_data]
+        test_py_data = [d["test_loc_py"] for d in graph_data]
+        test_ts_data = [d["test_loc_ts"] for d in graph_data]
+        test_sh_data = [d["test_loc_sh"] for d in graph_data]
 
-        non_source_def = "xychart-beta\n"
-        non_source_def += '    title "Non-Source & Test Growth (not included in core source lines)"\n'
-        non_source_def += f"    x-axis {json.dumps(dates)}\n"
-        non_source_def += '    y-axis "LOC"\n'
-        non_source_def += f'    line {json.dumps(md_data)} "Markdown"\n'
-        non_source_def += f'    line {json.dumps(json_data)} "JSON"\n'
-        non_source_def += f'    line {json.dumps(test_total_data)} "Test Total"'
+        test_def = "xychart-beta\n"
+        test_def += '    title "Test Lines of Code over Time"\n'
+        test_def += f"    x-axis {json.dumps(dates)}\n"
+        test_def += '    y-axis "LOC"\n'
+        test_def += f'    line {json.dumps(test_total_data)} "Total"\n'
+        test_def += f'    line {json.dumps(test_py_data)} "Python"\n'
+        test_def += f'    line {json.dumps(test_ts_data)} "TS/JS"\n'
+        test_def += f'    line {json.dumps(test_sh_data)} "Shell"'
+
+        def make_test_svg():
+            chart = SimpleSVGChart("Test Lines of Code over Time")
+            chart.set_x_labels(dates)
+            chart.add_line(test_total_data, "Total", "#2196F3")  # Blue
+            chart.add_line(test_py_data, "Python", "#4CAF50")  # Green
+            chart.add_line(test_ts_data, "TS/JS", "#ff9800")  # Orange
+            chart.add_line(test_sh_data, "Shell", "#795548")  # Brown
+            return chart.generate()
 
         charts.append(
             generate_chart(
-                "Non-Source & Test Growth",
-                None,
-                "non_source_history",
-                non_source_def,
+                "Test Lines of Code over Time", make_test_svg, "test_loc_history", test_def
             )
         )
-
-        # Remove Test Code Growth chart from here as it's merged into Non-Source Growth
 
         # Debt Chart
         charts.append("\n## Technical Debt")
@@ -1026,10 +1111,15 @@ def run_history_analysis(target_repo_root, ade_root, args):
         debt_def += f'    line {json.dumps(todo_data)} "TODOs"\n'
         debt_def += f'    line {json.dumps(fixme_data)} "FIXMEs"'
 
+        def make_debt_svg():
+            chart = SimpleSVGChart("Technical Debt Markers")
+            chart.set_x_labels(dates)
+            chart.add_line(todo_data, "TODOs", "#e91e63")  # Pink
+            chart.add_line(fixme_data, "FIXMEs", "#f44336")  # Red
+            return chart.generate()
+
         charts.append(
-            generate_chart(
-                "Technical Debt Markers", None, "debt_history", debt_def
-            )
+            generate_chart("Technical Debt Markers", make_debt_svg, "debt_history", debt_def)
         )
 
         charts.append("\n## Commit History")
@@ -1056,37 +1146,20 @@ def main():
 
     # History Args
     parser.add_argument(
-        "--history",
-        action="store_true",
-        help="Run in history mode (default if no other mode)",
+        "--history", action="store_true", help="Run in history mode (default if no other mode)"
     )
-    parser.add_argument(
-        "--limit", type=int, default=None, help="Limit number of commits"
-    )
+    parser.add_argument("--limit", type=int, default=None, help="Limit number of commits")
     parser.add_argument("--reverse", action="store_true", help="Oldest to Newest")
     parser.add_argument("--since", help="Analyze commits since this hash")
     parser.add_argument(
-        "--incremental",
-        action="store_true",
-        help="Depublicated by default; always merges new commits with existing output file unless --refresh is used",
-    )
-    parser.add_argument(
-        "--refresh",
-        action="store_true",
-        help="Ignore existing report and re-analyze entire history",
-    )
-    parser.add_argument(
-        "--date-start",
-        help="Start date for analysis (YYYYMMDD or YYYY-MM-DD)",
+        "--incremental", action="store_true", help="Append new commits to existing output file"
     )
 
     # Local Args
     parser.add_argument(
         "--analyze-local", action="store_true", help="Analyze current filesystem state"
     )
-    parser.add_argument(
-        "--markdown", action="store_true", help="Output Markdown (Local mode)"
-    )
+    parser.add_argument("--markdown", action="store_true", help="Output Markdown (Local mode)")
     parser.add_argument(
         "--dual",
         action="store_true",
@@ -1097,42 +1170,28 @@ def main():
         action="store_true",
         help="Run validate.sh --full and include results in report",
     )
-    parser.add_argument(
-        "--path",
-        help="Path to the repository/directory to analyze (e.g. a submodule)",
-    )
-    parser.add_argument(
-        "--output",
-        help="Path to save the HISTORY.md report",
-    )
 
     args = parser.parse_args()
 
-    # Determine ADE Root (where the tool is installed)
-    # This script is in agent_env/bin/
-    ade_root = Path(__file__).resolve().parent.parent.parent
-
-    # Determine Target Path and Target Repo Root
-    target_path = Path(args.path or os.getcwd()).resolve()
-    target_repo_root = target_path
+    # Determine Root
+    cwd = Path.cwd()
+    project_root = cwd
     try:
         root_output = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=target_path,
-            text=True,
-            stderr=subprocess.DEVNULL,
+            ["git", "rev-parse", "--show-toplevel"], cwd=cwd, text=True, stderr=subprocess.DEVNULL
         ).strip()
-        target_repo_root = Path(root_output)
+        project_root = Path(root_output)
     except Exception:
-        pass  # Fallback to target_path
+        pass  # Fallback to cwd
 
-    check_configuration(ade_root)
+    check_configuration(project_root)
+    check_submodule_status(project_root)
 
     if args.analyze_local:
-        run_local_analysis(target_repo_root, ade_root, args)
+        run_local_analysis(project_root, args)
     else:
         # Default to history
-        run_history_analysis(target_repo_root, ade_root, args)
+        run_history_analysis(project_root, args)
 
 
 def check_configuration(project_root):
@@ -1180,9 +1239,7 @@ def check_submodule_status(project_root):
                 f"(Superproject expects {expected_hash[:7]}).",
                 file=sys.stderr,
             )
-            print(
-                "   Assuming local development mode. No changes made.", file=sys.stderr
-            )
+            print("   Assuming local development mode. No changes made.", file=sys.stderr)
             print("", file=sys.stderr)
 
     except Exception:
