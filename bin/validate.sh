@@ -19,26 +19,34 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 
 # Store the project root directory
-if [ -d "agent_env" ] || [ -d ".agent" ]; then
-    ROOT_DIR="$(pwd)"
-    AGENT_DIR=$( [ -d "agent_env" ] && echo "agent_env" || echo ".agent" )
-elif [[ "$(basename "$(dirname "$0")")" == "bin" ]]; then
+if [[ "$(basename "$(dirname "$0")")" == "bin" ]]; then
     # When run via path like upstream/agent_env/bin/validate.sh
-    # We need to find the dir that CONTAINS agent_env
+    # We prioritize the directory containing THIS script's bin folder
     POSSIBLE_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
     if [ -d "$POSSIBLE_ROOT/agent_env" ] || [ -d "$POSSIBLE_ROOT/.agent" ]; then
         ROOT_DIR="$POSSIBLE_ROOT"
         AGENT_DIR=$( [ -d "$ROOT_DIR/agent_env" ] && echo "agent_env" || echo ".agent" )
+    fi
+fi
+
+if [ -z "$ROOT_DIR" ]; then
+    if [ -d "agent_env" ] || [ -d ".agent" ]; then
+        ROOT_DIR="$(pwd)"
+        AGENT_DIR=$( [ -d "agent_env" ] && echo "agent_env" || echo ".agent" )
     else
         ROOT_DIR="$(pwd)"
     fi
-else
-    ROOT_DIR="$(pwd)"
 fi
 cd "$ROOT_DIR"
 
 
 # Ensure Environment
+# Check for SKIP_VALIDATION override
+if [[ "$SKIP_VALIDATION" == "true" ]]; then
+    echo -e "\033[1;33mValidation OVERRIDDEN via SKIP_VALIDATION=true. Proceeding...\033[0m"
+    exit 0
+fi
+
 # Check for First Run or explicit configuration
 if [[ "$1" != "--help" && "$1" != "-h" ]]; then
     # If AGENT_DIR is empty, it's likely the main repo itself.
@@ -142,6 +150,9 @@ ${YELLOW}Examples:${NC}
   ./bin/validate.sh --full         # Full: pre-commit validation
   ./bin/validate.sh --exhaustive   # Exhaustive: pre-merge
   ./bin/validate.sh --full --live  # Full + API tests
+
+${YELLOW}Environment Variables:${NC}
+  SKIP_VALIDATION=true Skip all checks and exit immediately (code 0)
 
 ${YELLOW}Notes:${NC}
   - \$ tests are marked "live" (Gemini API calls)
